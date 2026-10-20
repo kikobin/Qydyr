@@ -1,0 +1,1085 @@
+// Qydyr Mini App: map + sheet. Works inside Telegram and in any browser.
+import { api } from "./api.js";
+import { WeatherFx } from "./fx.js";
+import { QUICK_QUERIES, SPEECH_LANG, STR, WALK } from "./i18n.js";
+import { ASYQ, I, LOGO, REASON_ICON } from "./icons.js";
+import { ASTANA, CityMap } from "./map.js";
+import { MASCOT_NAME, mascot, moodForWeather } from "./mascot.js";
+import * as T from "./tg.js";
+import * as WK from "./walk.js";
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const TZ_OFFSET_MIN = 5 * 60;  // Astana: UTC+5 all year
+const local = (iso) => new Date(new Date(iso).getTime() + TZ_OFFSET_MIN * 60000);
+const hm = (iso) => { if (!iso) return ""; const d = local(iso); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+const isoLocal = (date) => { const d = new Date(date.getTime() + TZ_OFFSET_MIN * 60000); return d.toISOString().slice(0, 19) + "+05:00"; };
+
+const S = {
+  lang: "ru", t: STR.ru, theme: "dark", config: null,
+  loc: null, query: "", overrides: {}, preset: null, at: null,
+  answer: null, sel: 0, view: "home", stack: [], place: null, walks: null, walkTitle: null,
+  loading: false, favs: [], sheet: "half",
+  tours: null, tour: null, walk: null, walkDone: null, saved: null, wx: null, walkTour: null,
+};
+const W = () => WALK[S.lang];
+const DEMO_MPS = 95;      // the demo walker's speed on screen, meters per second
+
+let map = null;
+let fx = null;
+
+// ---------------------------------------------------------------- helpers
+function toast(text, ms = 2600) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.setAttribute("role", "status");
+  t.textContent = text;
+  $("#app").append(t);
+  setTimeout(() => t.remove(), ms);
+}
+
+function setSheet(state) {
+  S.sheet = state;
+  const peek = { low: "24vh", half: "48vh", full: "88vh" }[state];
+  $("#sheet").style.setProperty("--peek", peek);
+}
+
+function go(view, push = true) {
+  if (push && S.view !== view) S.stack.push(S.view);
+  S.view = view;
+  T.backButton(S.stack.length > 0);
+  renderSheet();
+  $("#sheet .body").scrollTop = 0;
+}
+
+function back() {
+  const v = S.stack.pop();
+  if (v == null) return;
+  if (S.view === "walk") stopWalk();
+  if ((S.view === "tour" || S.view === "walk" || S.view === "walkdone") && v !== "tour" && v !== "walk") {
+    if (S.answer) map.show(S.answer, S.sel, { labels: { you: S.t.you_here } });
+    else { map.clear(); map.mode = null; map.tourData = null; }
+  }
+  S.view = v;
+  T.backButton(S.stack.length > 0);
+  renderSheet();
+}
+
+function catLabel(cat) { return S.t.category[cat] || S.t.category.other; }
+function confWord(c) { return c >= 0.75 ? S.t.confidence.high : c >= 0.5 ? S.t.confidence.mid : S.t.confidence.low; }
+function host(u) { try { const h = new URL(u).hostname.replace("www.", ""); return h.includes("openstreetmap") ? "OpenStreetMap" : h; } catch (_) { return u; } }
+function nowLabel() {
+  const at = S.answer ? S.answer.at : (S.at || serverNow().toISOString());
+  const d = local(at);
+  return `${S.t.day[d.getUTCDay()]} ${hm(at)}`;
+}
+
+// ---------------------------------------------------------------- top bar
+function renderTop() {
+  $("#q").placeholder = S.t.placeholder;
+  $("#mic").setAttribute("aria-label", S.t.voice);
+  $("#go").setAttribute("aria-label", S.t.send);
+  const chips = S.answer ? S.answer.chips : [];
+  const parts = [];
+  if (!S.answer) {
+    parts.push(`<button class="chip" data-act="locate">${I.pin("i-s")}${esc(S.t.locate)}</button>`);
+    parts.push(`<button class="chip" data-act="machine">${I.clock("i-s")}${esc(S.t.machine)}</button>`);
+    parts.push(`<button class="chip off" data-act="surprise">${I.dice("i-s")}${esc(S.t.surprise)}</button>`);
+  }
+  chips.forEach((c, i) => {
+    if (c.key === "wheelchair" && !c.active) return;   // keep the row short; available in the chip menu of "kids"
+    const cls = c.kind === "place" ? "" : !c.active ? "off" : c.kind === "need" || c.kind === "filter" ? "on" : "";
+    const icon = c.kind === "place" ? I.pin("i-s") : c.kind === "time" ? I.clock("i-s") : c.key === "kids" ? I.kid("i-s")
+      : c.key === "only_events" ? I.event("i-s") : c.kind === "deadline" ? I.plane("i-s") : !c.active ? I.plus("i-s") : "";
+    parts.push(`<button class="chip ${cls}" data-act="chip" data-i="${i}" aria-haspopup="${c.options.length ? "menu" : "false"}">${icon}${esc(c.label)}${c.assumed ? '<span class="q" aria-label="предположение">?</span>' : ""}</button>`);
+  });
+  $("#chips").innerHTML = parts.join("");
+  const ctx = S.answer && S.answer.context;
+  const wx = $("#wx");
+  if (ctx && ctx.weather) {
+    const w = ctx.weather, lvl = ctx.comfort ? ctx.comfort.level : 2;
+    wx.hidden = false;
+    wx.innerHTML = `<span class="t">${w.temp_c > 0 ? "+" : ""}${Math.round(w.temp_c)}°</span>
+      <span class="d"><span>${esc(w.level)}${w.sunset ? ` · ${S.lang === "en" ? "sunset" : S.lang === "kk" ? "күн батуы" : "закат"} ${hm(w.sunset)}` : ""}</span>
+      <span class="meter" role="img" aria-label="${esc(S.t.comfort)} ${lvl}/4">${[0, 1, 2, 3].map((k) => `<span class="${k < lvl ? "on" : ""}"></span>`).join("")}</span></span>`;
+  } else wx.hidden = true;
+}
+
+// ---------------------------------------------------------------- sheet views
+function renderSheet() {
+  const v = S.view, t = S.t;
+  let html = "";
+  if (S.loading) html = `<div class="loading" aria-live="polite">${mascot("think", { size: 56, title: MASCOT_NAME[S.lang] })}<span>${esc(t.loading)}</span></div><div class="skeleton"></div><div class="skeleton" style="height:80px"></div>`;
+  else if (v === "home") html = viewHome();
+  else if (v === "results") html = viewResults();
+  else if (v === "whynot") html = viewWhyNot();
+  else if (v === "place") html = viewPlace();
+  else if (v === "machine") html = viewMachine();
+  else if (v === "saved") html = viewSaved();
+  else if (v === "tour") html = viewTour();
+  else if (v === "walk") html = viewWalk();
+  else if (v === "walkdone") html = viewWalkDone();
+  $("#sheet .body").innerHTML = html;
+  if (v === "machine") bindMachine();
+}
+
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+function head(title, { backBtn = false, right = "", wrap = false } = {}) {
+  return `<div class="view-head">${backBtn ? `<button class="icon-btn" data-act="back" aria-label="${esc(S.t.back)}">${I.back()}</button>` : ""}
+    <h1 class="${wrap ? "" : "one"}" style="flex:1">${esc(title)}</h1>${right}</div>`;
+}
+
+function mascotMood() {
+  if (S.preset) return { blizzard: "cold", frost: "cold", rain: "rain", summer_evening: "summer", smog: "smog" }[S.preset] || "hello";
+  const ctx = S.answer && S.answer.context;
+  if (ctx && ctx.weather) return moodForWeather(ctx.weather, ctx.air);
+  return moodForWeather(S.wx);
+}
+
+// clothes for the weather (frost, smog, rain, summer); null when the weather needs nothing special
+function outfit() {
+  const m = mascotMood();
+  return ["cold", "smog", "rain", "summer"].includes(m) ? m : null;
+}
+
+// the "feels like" the mascot talks about: the simulated weather while the time machine is on, else the live one
+function feelsNow() {
+  const cw = S.answer && S.answer.context && S.answer.context.weather;
+  if (S.preset || S.at) return cw && (!S.preset || cw.simulated) ? Math.round(cw.feels_c) : null;
+  if (S.wx && S.wx.feels != null) return S.wx.feels;
+  return cw ? Math.round(cw.feels_c) : null;
+}
+
+function moodLine(mood) {
+  const f = feelsNow();
+  const fn = W().mood[mood];
+  return fn ? fn(f == null ? "" : f > 0 ? `+${f}` : String(f)) : "";
+}
+
+function mascotSays(mood, html, { size = 64 } = {}) {
+  return `<div class="mascot-row">${mascot(mood, { size, title: MASCOT_NAME[S.lang] })}
+    <div class="bubble"><span class="who">${esc(MASCOT_NAME[S.lang])}</span>${html}</div></div>`;
+}
+
+function tourCard(c) {
+  return `<button class="walk tour" data-act="tour" data-id="${esc(c.id)}"><span class="badge">${mascot("hello", { size: 26, still: true })}${esc(W().guided)}</span>
+    <span class="t">${esc(c.title)}</span><span class="s">${esc(c.subtitle)}</span><span class="m">${esc(c.meta)}</span></button>`;
+}
+
+function viewHome() {
+  const t = S.t;
+  const walks = S.walks === null ? `<div class="skeleton" style="height:116px"></div>`
+    : S.walks.length ? `<div class="walks">${S.walks.map((w, i) => `<button class="walk" data-act="walk" data-i="${i}"><span class="t">${esc(w.title)}</span><span class="s">${esc(w.subtitle)}</span><span class="m">${esc(w.meta)}</span></button>`).join("")}</div>` : "";
+  const mood = mascotMood();
+  const line = mood !== "hello" ? moodLine(mood) : "";
+  const tours = S.tours && S.tours.length ? `<h3 class="sec">${esc(W().tours)}</h3><div class="walks">${S.tours.map(tourCard).join("")}</div>` : "";
+  const resume = S.saved && !S.walk ? `<button class="mini resume" data-act="resume">${I.play()}<span class="t">${esc(W().resume(S.saved.title))}</span>${I.chev("i-s")}</button>` : "";
+  return `${mascotSays(mood, `<b>${esc(t.hello)}</b><br>${esc(line || t.hello_sub)}`, { size: 84 })}
+    ${resume}
+    ${tours}
+    <div class="quick">${t.quick.map((q, i) => `<button class="chip" data-act="quick" data-i="${i}">${esc(q)}</button>`).join("")}</div>
+    <div class="actions"><button class="btn sun" style="flex:1" data-act="surprise">${I.dice()}${esc(t.surprise)}</button>
+      <button class="btn" style="flex:1" data-act="machine">${I.clock()}${esc(t.machine)}</button></div>
+    ${S.walks !== undefined && (S.walks === null || S.walks.length) ? `<h3 class="sec">${esc(S.tours && S.tours.length ? W().nearby_walks : t.walks)}</h3>${walks}` : ""}
+    <div class="actions"><label class="btn" style="flex:1;cursor:pointer">${I.camera()}${esc(t.photo)}<input id="photo" type="file" accept="image/*" capture="environment" class="sr-only"></label></div>
+    ${S.config && S.config.bot_username ? `<button class="mini" data-act="friends">${I.people()}<span style="display:flex;flex-direction:column;gap:2px"><span class="t">${esc(t.friends)}</span><span class="meta" style="font-family:var(--font-body)">${esc(t.friends_sub)}</span></span>${I.chev("i-s")}</button>` : ""}
+    <div class="actions"><button class="btn" style="flex:1" data-act="saved">${I.bookmark()}${esc(t.saved)}</button>
+      <button class="btn" data-act="lang" aria-label="${esc(t.lang)}">${I.globe()}${{ ru: "Рус", kk: "Қаз", en: "Eng" }[S.lang]}</button></div>
+    <p class="note">${esc(t.privacy)}</p>`;
+}
+
+function itemCard(it, i) {
+  const t = S.t, sel = i === S.sel;
+  const live = it.labels.includes("now") ? "live" : it.labels.includes("soon") ? "soon" : "";
+  const walk = it.walk_min === 0 ? t.here : (it.by === "taxi" ? t.taxi_min : t.walk_min)(it.walk_min);
+  const dist = it.distance_m >= 1000 ? `${(it.distance_m / 1000).toFixed(1).replace(".", ",")} км` : `${it.distance_m} ${t.m}`;
+  const [lo, hi] = it.visit_min;
+  const leave = it.leave_by ? (new Date(it.leave_by) <= new Date(new Date(S.answer.at).getTime() + 60000) ? t.leave_now : t.leave_by(hm(it.leave_by))) : "";
+  const srcs = [...new Set((it.sources || []).map(host))].join(", ") || "OpenStreetMap";
+  const full = sel || (S.answer.items.length === 1);
+  return `<article class="card ${sel ? "sel" : ""}" data-act="select" data-i="${i}">
+    <div class="card-top"><span class="num">${i + 1}</span>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <h2>${esc(it.title)}</h2>
+        <div class="status"><span class="dot ${live}"></span><span>${esc(it.status)}</span></div>
+        <span class="meta">${esc(walk)} · ${esc(dist)} · ${esc(t.stay)} ${lo === hi ? lo : `${lo}–${hi}`} ${esc(t.min)}</span>
+        ${leave ? `<span class="leave">${I.clock("i-s")}${esc(leave)}</span>` : ""}
+      </div></div>
+    ${full ? `
+      ${it.why.length ? `<p class="why"><b>${esc(t.why)}:</b> ${esc(it.why.join("; "))}</p>` : ""}
+      ${it.group_fit && it.group_fit.length ? `<p class="why">${it.group_fit.map(esc).join("<br>")}</p>` : ""}
+      <div class="todo"><span class="tag ${it.what_to_do_source === "data" ? "fact" : "idea"}">${esc(it.what_to_do_source === "data" ? t.fact : t.idea)}</span><span>${esc(it.what_to_do)}</span></div>
+      ${it.warnings.length ? `<div class="warn">${esc(it.warnings.join("; "))}</div>` : ""}
+      <div class="src">${esc(t.source)}: ${esc(srcs)} · ${esc(confWord(it.confidence))}</div>
+      <div class="actions">
+        <button class="btn primary" data-act="route" data-i="${i}">${I.route()}${esc(t.route)}</button>
+        ${it.place_id ? `<button class="icon-btn" data-act="place" data-i="${i}" aria-label="${esc(t.ask_place)}">${I.ask()}</button>` : ""}
+        <button class="icon-btn" data-act="share" data-i="${i}" aria-label="${esc(t.share)}">${I.share()}</button>
+      </div>` : ""}
+  </article>`;
+}
+
+function viewResults() {
+  const a = S.answer, t = S.t;
+  if (!a) return viewHome();
+  const n = a.items.length;
+  const f = Object.fromEntries((a.funnel || []).map((x) => [x.key, x.n]));
+  const sim = a.context && a.context.simulated;
+  const notes = (a.notes || []).filter((x) => !x.startsWith("Симуляция"));
+  const r = a.route;
+  return `${head(S.walkTitle || (n ? t.picked(n) : t.nothing), { backBtn: S.stack.length > 0, right: `<span class="when">${esc(nowLabel())}</span>` })}
+    ${sim ? `<div class="banner sim">${I.clock("i-s")}<span>${esc(t.sim_banner(sim))}</span></div>` : ""}
+    ${a.funnel && a.funnel.length ? `<button class="funnel-link" data-act="whynot"><span><b>${f.nearby}</b> ${esc(t.funnel_short.nearby)} → <b>${f.reachable}</b> ${esc(t.funnel_short.reachable)} → <b>${f.open}</b> ${esc(t.funnel_short.open)} → <b>${f.fit}</b> ${esc(t.funnel_short.fit)} → <b class="n">${f.picked}</b></span>${I.chev("i-s")}</button>` : ""}
+    ${!n ? mascotSays("shrug", esc(notes[0] || t.nothing)) : notes.length ? `<div class="banner info"><span>${notes.map(esc).join("<br>")}</span></div>` : ""}
+    ${S.walkTour && S.walkTitle ? `<div class="actions"><button class="btn primary" style="flex:1" data-act="walk-gen">${I.play()}${esc(W().start)}</button><button class="btn" data-act="walk-gen-demo">${esc(W().demo)}</button></div>` : ""}
+    ${a.items.map(itemCard).join("")}
+    ${r ? `<h3 class="sec">${esc(t.route_title(r.total_min))}</h3><div class="timeline">${r.stops.map((s) => `<div class="tl"><span class="tm">${hm(s.arrive_at)}–${hm(s.leave_at)}</span><span class="rail"></span><span>${esc(s.title)}${s.walk_min ? ` <span class="tl-walk">+${s.walk_min} ${esc(t.min)}</span>` : ""}</span></div>`).join("")}</div>` : ""}
+    ${n ? `<div class="actions"><button class="btn" style="flex:1" data-act="vote" data-v="up">${I.thumbUp()}${S.lang === "ru" ? "Подходит" : S.lang === "kk" ? "Сай келеді" : "Good"}</button>
+      <button class="btn" style="flex:1" data-act="vote" data-v="down">${I.thumbDown()}${S.lang === "ru" ? "Не то" : S.lang === "kk" ? "Сай емес" : "Not it"}</button></div>` : ""}
+    <div class="actions"><button class="btn sun" style="flex:1" data-act="surprise">${I.dice()}${esc(t.surprise)}</button>
+      <button class="btn" style="flex:1" data-act="machine">${I.clock()}${esc(t.machine)}</button></div>`;
+}
+
+function viewWhyNot() {
+  const a = S.answer, t = S.t;
+  const max = Math.max(1, ...(a.funnel || []).map((x) => x.n));
+  const rows = (a.funnel || []).map((x, i, arr) => `<div class="frow ${i === arr.length - 1 ? "last" : ""}"><span>${esc(t.funnel[x.key] || x.label)}</span>
+    <span><span class="bar" style="display:block;width:${Math.max(4, (x.n / max) * 100)}%"></span></span><span class="n">${x.n}</span></div>`).join("");
+  const rej = (a.rejected || []).map((r, i) => `<button class="rej" data-act="rej" data-i="${i}">
+    <span class="ic">${I[REASON_ICON[r.reason_code] || "target"]("i-s")}</span>
+    <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="t">${esc(r.title)}</span><span class="r">${esc(r.reason)}</span></span></button>`).join("");
+  return `${head(t.why_not, { backBtn: true })}
+    <section class="funnel" aria-label="${esc(t.why_not)}">${rows}</section>
+    ${rej ? `<h3 class="sec">${esc(t.rejected)}</h3><div style="display:flex;flex-direction:column;gap:2px">${rej}</div>` : ""}
+    <p class="note">${esc(t.algo_note)}</p>`;
+}
+
+function viewPlace() {
+  const p = S.place, t = S.t;
+  if (!p) return "";
+  const card = p.card;
+  const ev = (card && card.events) || [];
+  const fav = S.favs.some((f) => f.id === p.id);
+  const qa = p.qa.map((x) => `<div class="bubble-q">${esc(x.q)}</div>${x.a ? `<div class="bubble-a"><span class="cert ${x.a.certainty}">${x.a.certainty === "yes" ? I.check("i-s") : ""}${esc(t.cert[x.a.certainty])}</span><span>${esc(x.a.answer)}</span>${x.a.evidence && x.a.evidence.length ? `<span class="src">${esc([...new Set(x.a.evidence.map((e) => (/^https?:/.test(e) ? host(e) : e)))].join(" · "))}</span>` : ""}</div>` : `<div class="loading"><span class="spinner"></span></div>`}`).join("");
+  return `${head("", { backBtn: true, right: `<button class="icon-btn" data-act="fav" aria-label="${esc(fav ? t.unsave : t.save)}" style="${fav ? "color:var(--sun-text);border-color:var(--sun)" : ""}">${I.bookmark()}</button>` })}
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <span class="kicker">${esc(catLabel(p.category))}${p.walk != null ? ` · ${p.walk} ${esc(t.min)}` : ""}</span>
+        <h2 class="place-title">${esc(p.title)}</h2>
+        ${card ? `<span class="meta">${esc(card.badge)}</span>` : ""}
+      </div>
+      <span class="compass" id="compass" hidden><span id="arrow">${I.arrow("i")}</span><span class="meta" id="dist"></span></span>
+    </div>
+    ${p.reason ? `<div class="banner info">${I.target("i-s")}<span>${esc(p.reason)}</span></div>` : ""}
+    ${ev.length ? `<div class="live-box"><span style="font-weight:600">${esc(t.events_here)}</span>${ev.slice(0, 3).map((e) => `<div class="status"><span class="dot ${e.state === "now" ? "live" : "soon"}"></span><span><b>${esc(e.title)}</b> · ${esc(e.badge)}</span></div>`).join("")}</div>` : ""}
+    <div class="grid3">
+      <button class="btn primary" data-act="route-place">${I.route("i-s")}${esc(t.route)}</button>
+      <button class="btn sun" data-act="story">${I.speaker("i-s")}${esc(t.tell)}</button>
+      <button class="icon-btn" data-act="share-place" aria-label="${esc(t.share)}">${I.share()}</button>
+    </div>
+    ${p.story ? `<div class="bubble-a"><span class="tag idea" style="align-self:flex-start">${esc(t.idea)}</span><span>${esc(p.story.text)}</span><span class="src">${esc(t.story_by)}</span></div>` : ""}
+    <h3 class="sec">${esc(t.ask_place)}</h3>
+    <div class="chips" style="margin:0 -16px;padding:0 16px">${t.qa_suggest.map((q, i) => `<button class="chip" data-act="qa-suggest" data-i="${i}">${esc(q)}</button>`).join("")}</div>
+    ${qa}
+    <form class="qa-in" data-act="qa-form"><label class="sr-only" for="qa">${esc(t.ask_place)}</label>
+      <input id="qa" type="text" placeholder="${esc(t.qa_placeholder)}" autocomplete="off">
+      <button class="icon-btn solid" type="submit" aria-label="${esc(t.send)}">${I.send()}</button></form>`;
+}
+
+function serverNow() { return S.config && S.config.now ? new Date(S.config.now) : new Date(); }
+
+function slots() {
+  const now = serverNow();
+  const start = new Date(Math.ceil(now.getTime() / (30 * 60000)) * 30 * 60000);
+  return Array.from({ length: 29 }, (_, k) => new Date(start.getTime() + k * 30 * 60000));
+}
+
+function viewMachine() {
+  const t = S.t;
+  const sl = slots();
+  const idx = S.at ? Math.max(0, sl.findIndex((d) => isoLocal(d) === S.at)) : 0;
+  const lbl = S.at ? `${t.day[local(S.at).getUTCDay()]} ${hm(S.at)}` : `${t.now} · ${hm(serverNow().toISOString())}`;
+  const ctx = S.answer && S.answer.context;
+  const realAir = ctx && ctx.air && (ctx.air.source !== "симуляция" || S.preset === "smog");
+  return `${head(t.machine, { backBtn: true, right: `<button class="icon-btn" data-act="machine-reset" aria-label="${esc(t.reset)}" title="${esc(t.reset)}">${I.reset()}</button>` })}
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;justify-content:space-between"><label for="tslider" style="font-size:13px;font-weight:600;color:var(--text-2)">${esc(t.time)}</label><span class="mono" id="tlabel">${esc(lbl)}</span></div>
+      <input id="tslider" type="range" min="0" max="${sl.length - 1}" value="${idx}" style="width:100%;height:44px;margin:0;accent-color:var(--sky)">
+      <div class="mono" style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3)">${[0, 7, 14, 21, 28].map((k) => `<span>${hm(sl[k].toISOString())}</span>`).join("")}</div>
+    </div>
+    <div class="presets" role="group" aria-label="${esc(t.weather)}">
+      <button class="chip" data-act="preset" data-p="" aria-pressed="${!S.preset}">${esc(t.now)}</button>
+      ${Object.entries(t.presets).map(([k, v]) => `<button class="chip" data-act="preset" data-p="${k}" aria-pressed="${S.preset === k}">${esc(v)}</button>`).join("")}
+    </div>
+    ${mascotSays(mascotMood(), esc(moodLine(mascotMood()) || (ctx && ctx.comfort ? cap(ctx.comfort.label) : t.hello_sub)), { size: 60 })}
+    ${ctx && ctx.comfort ? `<div class="comfort-row"><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-weight:600">${esc(cap(ctx.comfort.label))}</span>
+      <span class="meta">${esc(ctx.comfort.factors.join(" · "))}${realAir && ctx.air.pm2_5 != null ? ` · PM2.5 ${Math.round(ctx.air.pm2_5)}` : ""}</span></span>
+      <span class="meter" role="img" aria-label="${esc(t.comfort)} ${ctx.comfort.level}/4">${[0, 1, 2, 3].map((k) => `<span class="${k < ctx.comfort.level ? "on" : ""}"></span>`).join("")}</span></div>` : ""}
+    ${S.answer && S.answer.items.length ? `<button class="mini" data-act="results">${I.list()}<span style="display:flex;flex-direction:column;min-width:0"><span class="t">${esc(S.t.picked(S.answer.items.length))}</span><span class="meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(S.answer.items.map((x) => x.title).join(" · "))}</span></span>${I.chev("i-s")}</button>` : ""}`;
+}
+
+function viewSaved() {
+  const t = S.t;
+  return `${head(t.saved, { backBtn: true })}
+    ${S.favs.length ? S.favs.map((f, i) => `<button class="mini" data-act="fav-open" data-i="${i}">${I.bookmark()}<span class="t">${esc(f.title)}</span></button>`).join("") : `<p class="note">${esc(t.saved_empty)}</p>`}`;
+}
+
+
+// ---------------------------------------------------------------- guided walks
+function viewTour() {
+  const tr = S.tour, w = W();
+  if (!tr) return `<div class="loading">${mascot("think", { size: 56 })}<span>${esc(S.t.loading)}</span></div><div class="skeleton"></div>`;
+  const resume = S.saved && S.saved.tourId === tr.id && S.saved.visited.length;
+  return `${head(tr.title, { backBtn: true })}
+    <span class="meta" style="margin-top:-6px">${esc(tr.meta)}${tr.subtitle ? ` · ${esc(tr.subtitle)}` : ""}</span>
+    ${mascotSays(outfit() || "happy", esc(tr.intro), { size: 72 })}
+    <div class="actions">
+      <button class="btn primary" style="flex:1" data-act="${resume ? "resume" : "walk-start"}">${I.play()}${esc(resume ? w.resume(tr.title) : w.start)}</button>
+      <button class="btn" data-act="walk-demo" title="${esc(w.demo_hint)}">${esc(w.demo)}</button>
+    </div>
+    <ol class="stops">${tr.stops_list.map((st, i) => `<li><button class="stop-row" data-act="tour-stop" data-i="${i}"><span class="num">${st.n}</span>
+      <span class="tx"><span class="t">${esc(st.name)}</span><span class="s">${esc(st.facts[0] ? st.facts[0].text : "")}</span></span></button></li>`).join("")}</ol>
+    ${tr.hours ? `<p class="why"><b>${esc(w.hours)}:</b> ${esc(tr.hours.text)}${tr.hours.source ? ` <button class="src link" data-act="link" data-url="${esc(tr.hours.source)}">${esc(host(tr.hours.source))}</button>` : ""}</p>` : ""}
+    ${tr.best_season ? `<p class="why"><b>${esc(w.season)}:</b> ${esc(tr.best_season)}</p>` : ""}
+    <p class="note">${esc(w.facts_note)} ${esc(w.privacy)}</p>`;
+}
+
+function stopCard(st) {
+  const w = W(), k = S.walk;
+  return `<article class="card sel stop-card">
+    <div class="card-top"><span class="num">${st.n}</span><div style="display:flex;flex-direction:column;gap:4px;min-width:0"><h2>${esc(st.name)}</h2></div></div>
+    <ul class="facts">${st.facts.map((f) => `<li><span>${esc(f.text)}</span>${f.source ? `<button class="src link" data-act="link" data-url="${esc(f.source)}">${I.link("i-xs")}${esc(f.source_name)}</button>` : `<span class="src">${esc(f.source_name)}</span>`}</li>`).join("")}</ul>
+    ${st.tip ? `<div class="todo"><span class="tag fact">${esc(w.tip)}</span><span>${esc(st.tip)}</span></div>` : ""}
+    ${k && k.story && k.story.stop === st.id ? `<div class="bubble-a"><span class="tag idea" style="align-self:flex-start">${esc(S.t.idea)}</span><span>${esc(k.story.text)}</span><span class="src">${esc(w.story_claude)}</span></div>` : ""}
+    <div class="actions">
+      <button class="btn sun" style="flex:1" data-act="walk-listen">${I.speaker("i-s")}${esc(k && k.speaking ? w.stop_talk : w.listen)}</button>
+      ${S.tour.kind === "tour" && S.config && S.config.llm ? `<button class="btn" style="flex:1" data-act="walk-more">${esc(w.more)}</button>` : ""}
+    </div>
+    <button class="btn primary wide" data-act="walk-next">${esc(w.next)}${I.chev("i-s")}</button></article>`;
+}
+
+function viewWalk() {
+  const k = S.walk, tr = S.tour, w = W();
+  if (!k || !tr) return viewHome();
+  const stops = tr.stops_list;
+  const cur = k.current ? stops.find((x) => x.id === k.current) : null;
+  const nxt = k.next ? stops.find((x) => x.id === k.next) : null;
+  const total = stops.length;
+  const n = Math.min(total, k.visited.length + (cur ? 0 : 1));
+  const segs = stops.map((x) => `<span class="${k.visited.includes(x.id) ? "on" : x.id === k.next ? "next" : ""}"></span>`).join("");
+  const dist = k.next_m != null ? w.meters(k.next_m) : "";
+  const line = cur ? w.arrived(cur.name)
+    : nxt ? (k.visited.length ? w.to_next(nxt.name, dist, k.next_min) : (k.next_m != null ? w.to_start(nxt.name, dist) : w.to_next(nxt.name, "", 0))) : "";
+  const mood = k.speaking ? "talk" : outfit() || (cur ? "happy" : "hello");
+  const nudges = (k.nudges || []).map((x) => `<div class="banner info nudge">${x.kind === "event" ? I.event("i-s") : x.kind === "warm" ? I.snow("i-s") : I.target("i-s")}<span>${esc(x.text)}</span></div>`).join("");
+  return `${head(tr.title, { backBtn: true, right: `<span class="when">${esc(w.stop_of(n, total))}</span>` })}
+    <div class="segs" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${k.visited.length}">${segs}</div>
+    ${mascotSays(mood, `${esc(line)}${k.off_route && nxt && !cur ? `<br><span class="warn">${esc(w.off_route(nxt.name))}</span>` : ""}`)}
+    ${nudges}
+    ${cur ? stopCard(cur) : ""}
+    <div class="actions">
+      ${!cur && nxt ? `<button class="btn" style="flex:1" data-act="walk-here">${I.pin("i-s")}${esc(w.here)}</button>` : ""}
+      <button class="btn" ${cur || !nxt ? 'style="flex:1"' : ""} data-act="walk-finish">${I.flag("i-s")}${esc(w.finish)}</button>
+    </div>
+    <p class="note">${esc(k.sim ? w.demo_hint : w.privacy)}</p>`;
+}
+
+function viewWalkDone() {
+  const d = S.walkDone, w = W();
+  if (!d) return viewHome();
+  return `${head(w.done_title)}
+    <div class="done-hero">${mascot("celebrate", { size: 132, title: MASCOT_NAME[S.lang] })}
+      <p class="big">${esc(d.title)}</p><p class="meta">${esc(w.done_line(d.stops, d.facts, d.min))}</p><p class="why">${esc(w.finish_line)}</p></div>
+    <div class="actions"><button class="btn primary" style="flex:1" data-act="walk-invite">${I.share()}${esc(w.invite)}</button>
+      <button class="btn" style="flex:1" data-act="walk-again">${esc(w.again)}</button></div>`;
+}
+
+function renderKeep() {
+  const body = $("#sheet .body");
+  const top = body.scrollTop;
+  renderSheet();
+  body.scrollTop = top;
+}
+
+function tourMapOpts(extra = {}) {
+  const k = S.walk;
+  return { visited: k ? k.visited : [], next: k ? k.next : null, me: k ? k.pos : null, doneLabel: W().done_label,
+           onStop: (i) => focusStop(i), ...extra, mood: outfit() || "hello" };
+}
+
+function focusStop(i) {
+  const st = S.tour && S.tour.stops_list[i];
+  if (!st) return;
+  map.focus(st.lon, st.lat);
+  T.haptic.tap();
+  if (S.view === "tour") document.querySelectorAll(".stop-row").forEach((r, k) => r.classList.toggle("sel", k === i));
+}
+
+async function loadTours() {
+  try { S.tours = await api.tours(S.lang); } catch (_) { S.tours = []; }
+  if (S.view === "home") renderSheet();
+}
+
+async function loadWx(lat, lon) {
+  try { S.wx = await api.weather({ lat: lat.toFixed(2), lon: lon.toFixed(2), ...(S.at ? { at: S.at } : {}) }); } catch (_) { return; }
+  if (S.view === "home" || S.view === "tour" || S.view === "walk") renderKeep();
+}
+
+async function openTour(id, { walk = null } = {}) {
+  stopWalk();
+  S.tour = null;
+  go("tour");
+  setSheet("half");
+  try {
+    S.tour = walk ? walk.tour : await api.tour(id, S.lang);
+  } catch (_) { toast(S.t.net_error); back(); return; }
+  renderSheet();
+  map.showTour(S.tour, tourMapOpts());
+  if (S.tour.start) loadWx(S.tour.start[0], S.tour.start[1]);
+}
+
+function startWalk({ sim = false, resume = null } = {}) {
+  const tr = S.tour;
+  if (!tr) return;
+  stopWalk();
+  const visited = resume ? resume.visited.filter((id) => tr.stops_list.some((x) => x.id === id)) : [];
+  const nxt = WK.nextStop(tr.stops_list, visited);
+  S.walk = { tourId: tr.id, visited, current: null, next: nxt ? nxt.id : null, next_m: null, next_min: null, off_route: false, sim,
+             startedAt: resume ? resume.startedAt : Date.now(), speaking: false, nudges: [], story: null,
+             facts: resume ? resume.facts || 0 : 0, lastNudgeAt: 0, pos: null, uiAt: 0, timers: [] };
+  S.walkDone = null;
+  if (S.view !== "walk") go("walk"); else renderSheet();
+  setSheet("half");
+  T.haptic.ok();
+  map.showTour(tr, tourMapOpts());
+  if (sim) runDemo(); else { saveWalk(); track(); }
+}
+
+function saveWalk() {
+  const k = S.walk;
+  if (!k || k.sim || S.tour.kind !== "tour") return;
+  S.saved = { tourId: k.tourId, title: S.tour.title, visited: k.visited, startedAt: k.startedAt, facts: k.facts };
+  T.store.set("walk", JSON.stringify(S.saved));
+}
+
+function stopWalk() {
+  const k = S.walk;
+  if (!k) return;
+  if (k.watch != null && navigator.geolocation) navigator.geolocation.clearWatch(k.watch);
+  clearInterval(k.poll);
+  cancelAnimationFrame(k.raf);
+  k.timers.forEach(clearTimeout);
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  S.walk = null;
+}
+
+function track() {
+  const k = S.walk;
+  if (navigator.geolocation && navigator.geolocation.watchPosition) {
+    k.watch = navigator.geolocation.watchPosition((p) => onPosition(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
+      () => pollPosition(), { enableHighAccuracy: true, maximumAge: 4000, timeout: 20000 });
+  } else pollPosition();
+}
+
+function pollPosition() {
+  const k = S.walk;
+  if (!k || k.poll) return;
+  const tick = async () => {
+    const p = await T.getLocation(8000);
+    if (S.walk !== k) return;
+    if (p) onPosition(p.lat, p.lon, 50);
+    else if (!k.warned) { k.warned = true; toast(W().geo_off, 4500); }
+  };
+  tick();
+  k.poll = setInterval(tick, 10000);
+}
+
+// one position (real GPS or the demo walker): arrival, next stop, distance; nothing leaves the phone
+function onPosition(lat, lon, acc = 0) {
+  const k = S.walk;
+  if (!k) return;
+  k.pos = { lat, lon };
+  map.setWalker(lon, lat, { follow: true });
+  if (k.current) return;                 // a stop card is open: arrivals wait until "Дальше"
+  const pr = WK.progress(S.tour, lat, lon, k.visited, acc);
+  k.next = pr.next; k.next_m = pr.next_m; k.next_min = pr.next_min; k.off_route = pr.off_route;
+  if (pr.arrived) { arrive(pr.arrived, pr.visited); return; }
+  k.visited = pr.visited;
+  if (pr.done) { finishWalk(); return; }
+  if (Date.now() - k.uiAt > 600 && S.view === "walk") { k.uiAt = Date.now(); renderKeep(); }
+  maybeNudges(lat, lon);
+}
+
+function arrive(id, visited) {
+  const k = S.walk;
+  const st = S.tour.stops_list.find((x) => x.id === id);
+  if (!st) return;
+  k.visited = [...new Set(visited)];
+  k.current = id;
+  k.story = null;
+  k.facts += st.facts.length;
+  const nxt = WK.nextStop(S.tour.stops_list, k.visited);
+  k.next = nxt ? nxt.id : null;
+  T.haptic.ok();
+  map.showTour(S.tour, tourMapOpts({ fit: false }));
+  if (S.view !== "walk") go("walk"); else renderSheet();
+  $("#sheet .body").scrollTop = 0;
+  saveWalk();
+  maybeNudges(st.lat, st.lon, true);   // what is on right here (an evening exhibition inside, a concert next door)
+  if (k.sim) {   // the demo tells the facts aloud and walks on by itself, after enough time to read them
+    const go_on = () => { if (S.walk === k && k.current === id) nextFromStop(); };
+    const chars = st.facts.reduce((n, f) => n + f.text.length, 0) + (st.tip || "").length;
+    const readBy = Date.now() + Math.min(13000, Math.max(5500, chars * 45));
+    speakStop(st, () => k.timers.push(setTimeout(go_on, Math.max(900, readBy - Date.now()))));
+    k.timers.push(setTimeout(go_on, 16000));
+  }
+}
+
+function nextFromStop() {
+  const k = S.walk;
+  if (!k) return;
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  k.speaking = false;
+  k.current = null;
+  if (!k.next) { finishWalk(); return; }
+  if (k.pos) {
+    const st = S.tour.stops_list.find((x) => x.id === k.next);
+    const m = WK.haversine(k.pos.lat, k.pos.lon, st.lat, st.lon) * 1.3;
+    k.next_m = Math.round(m); k.next_min = WK.walkMinutes(m);
+  }
+  renderKeep();
+}
+
+function arriveManually() {
+  const k = S.walk;
+  if (!k || !k.next) return;
+  arrive(k.next, [...k.visited, k.next]);
+}
+
+function runDemo() {
+  const k = S.walk;
+  k.path = WK.demoPath(S.tour);
+  k.dist = 0;
+  k.pi = -1;
+  k.t0 = null;
+  const step = (now) => {
+    if (S.walk !== k) return;
+    if (k.current) { k.t0 = now; k.raf = requestAnimationFrame(step); return; }
+    const dt = k.t0 == null ? 0 : (now - k.t0) / 1000;
+    k.t0 = now;
+    k.dist += Math.min(dt, 0.1) * DEMO_MPS;
+    const i = Math.min(k.path.length - 1, Math.floor(k.dist / 6));
+    if (i !== k.pi) { k.pi = i; onPosition(k.path[i].lat, k.path[i].lon, 5); }
+    if (S.walk !== k) return;
+    if (i >= k.path.length - 1 && !k.current) { finishWalk(); return; }
+    k.raf = requestAnimationFrame(step);
+  };
+  k.raf = requestAnimationFrame(step);
+  maybeNudges(S.tour.stops_list[0].lat, S.tour.stops_list[0].lon, true);
+}
+
+async function maybeNudges(lat, lon, force = false) {
+  const k = S.walk;
+  if (!k || (!force && Date.now() - k.lastNudgeAt < (k.sim ? 3500 : 60000))) return;
+  k.lastNudgeAt = Date.now();
+  const nx = S.tour.stops_list.find((x) => x.id === k.next);
+  const q = { lat: lat.toFixed(3), lon: lon.toFixed(3), lang: S.lang, ...(S.at ? { at: S.at } : {}), ...(S.preset ? { weather_preset: S.preset } : {}),
+              ...(nx ? { next_lat: nx.lat, next_lon: nx.lon } : {}) };
+  try {
+    const r = await api.nudges(q);
+    if (S.walk !== k) return;
+    if (r.weather) S.wx = r.weather;
+    // one hint per event or place: a newer one (closer, fresher time) replaces the old instead of piling up
+    const key = (x) => `${x.kind}:${x.event_id || x.place_id || x.text}`;
+    const seen = new Set(k.nudges.map(key));
+    const fresh = r.nudges.filter((x) => !seen.has(key(x)));
+    const merged = [...r.nudges, ...k.nudges.filter((x) => !r.nudges.some((y) => key(y) === key(x)))].slice(0, 2);
+    const changed = JSON.stringify(merged.map((x) => x.text)) !== JSON.stringify(k.nudges.map((x) => x.text));
+    k.nudges = merged;
+    if (fresh.length) T.haptic.tap();
+    if (changed) renderKeep();
+  } catch (_) { /* hints are optional */ }
+}
+
+function speak(text, onend) {
+  const k = S.walk;
+  if (!("speechSynthesis" in window) || !text) { if (onend) onend(); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = SPEECH_LANG[S.lang];
+  let done = false;
+  const end = () => { if (done) return; done = true; if (S.walk === k && k) { k.speaking = false; if (S.view === "walk") renderKeep(); } if (onend) onend(); };
+  u.onend = end;
+  u.onerror = end;
+  if (k) { k.speaking = true; if (S.view === "walk") renderKeep(); }
+  speechSynthesis.speak(u);
+}
+
+function speakStop(st, onend) {
+  speak(`${st.name}. ${st.facts.map((f) => f.text).join(" ")}${st.tip ? ` ${st.tip}` : ""}`, onend);
+}
+
+async function storyAtStop() {
+  const k = S.walk;
+  const st = k && S.tour.stops_list.find((x) => x.id === k.current);
+  if (!st) return;
+  try {
+    const r = await api.tourStory(S.tour.id, st.id, S.lang);
+    if (S.walk !== k) return;
+    k.story = { stop: st.id, text: r.text };
+    renderKeep();
+    speak(r.text);
+  } catch (_) { toast(S.t.net_error); }
+}
+
+function finishWalk() {
+  const k = S.walk;
+  if (!k) return;
+  const tr = S.tour;
+  S.walkDone = { tourId: tr.id, title: tr.title, stops: k.visited.length, facts: k.facts,
+                 min: k.sim ? (tr.duration_min || 1) : Math.max(1, Math.round((Date.now() - k.startedAt) / 60000)) };
+  stopWalk();
+  if (tr.kind === "tour") { S.saved = null; T.store.set("walk", ""); }
+  map.showTour(tr, { ...tourMapOpts(), visited: tr.stops_list.map((x) => x.id), next: null, fit: true });
+  S.stack = S.stack.filter((v) => v !== "walk" && v !== "walkdone");
+  go("walkdone");
+  T.haptic.ok();
+}
+
+async function inviteWalk() {
+  const d = S.walkDone || (S.tour && { tourId: S.tour.id, title: S.tour.title });
+  if (!d) return;
+  const bot = S.config && S.config.bot_username;
+  const url = bot ? `https://t.me/${bot}?startapp=t_${d.tourId}` : `${location.origin}${location.pathname}?tour=${encodeURIComponent(d.tourId)}`;
+  const res = await T.share(url, `Qydyr: ${d.title}`);
+  if (res === "copied") toast(S.t.shared);
+}
+
+// ---------------------------------------------------------------- actions
+async function ask(extra = {}) {
+  S.loading = true;
+  S.walkTitle = null;
+  if (S.view !== "results" && S.view !== "machine") go("results");
+  else renderSheet();
+  if (S.sheet === "low") setSheet("half");
+  try {
+    const body = { text: S.query, at: S.at, overrides: S.overrides, weather_preset: S.preset, lang: S.lang, ...extra };
+    if (S.loc) { body.lat = S.loc.lat; body.lon = S.loc.lon; }
+    const r = await api.ask(body);
+    show(r.answer);
+    T.haptic.ok();
+  } catch (e) {
+    console.error(e);
+    S.loading = false;
+    renderSheet();
+    toast(S.t.net_error);
+  }
+}
+
+function show(answer, { view } = {}) {
+  S.answer = answer;
+  S.sel = 0;
+  S.loading = false;
+  renderTop();
+  if (view) go(view); else if (S.view !== "machine") { if (S.view !== "results") go("results"); else renderSheet(); } else renderSheet();
+  map && map.show(answer, 0, { labels: { you: S.t.you_here } });
+  fx && fx.set((answer.context && answer.context.simulated) ? S.preset : null);
+}
+
+async function surprise() {
+  T.haptic.bump();
+  const wrap = document.createElement("div");
+  wrap.className = "asyq-wrap";
+  wrap.innerHTML = ASYQ;
+  $("#app").append(wrap);
+  const wait = new Promise((r) => setTimeout(r, 1150));
+  S.query = "";
+  try {
+    const body = { surprise: true, seed: Math.floor(Math.random() * 1e6), at: S.at, weather_preset: S.preset, lang: S.lang };
+    if (S.loc) { body.lat = S.loc.lat; body.lon = S.loc.lon; }
+    const [r] = await Promise.all([api.ask(body), wait]);
+    wrap.remove();
+    S.overrides = {};
+    show(r.answer, { view: S.view === "results" ? undefined : "results" });
+  } catch (e) {
+    wrap.remove();
+    toast(S.t.net_error);
+  }
+}
+
+function openChipMenu(btn, chip) {
+  closeMenu();
+  if (chip.key === "anchor") {
+    chip = { ...chip, options: [{ label: S.t.locate, patch: { __locate: true } }] };
+  }
+  if (!chip.options.length) return;
+  const m = document.createElement("div");
+  m.className = "chip-menu";
+  m.setAttribute("role", "menu");
+  m.innerHTML = chip.options.map((o, i) => `<button role="menuitemradio" aria-checked="${o.selected ? "true" : "false"}" data-o="${i}">${esc(o.label)}${o.selected ? I.check("i-s") : ""}</button>`).join("");
+  const r = btn.getBoundingClientRect();
+  m.style.left = `${Math.min(r.left, window.innerWidth - 220)}px`;
+  m.style.top = `${r.bottom + 6}px`;
+  m.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-o]");
+    if (!b) return;
+    const opt = chip.options[+b.dataset.o];
+    closeMenu();
+    T.haptic.tap();
+    if (opt.patch.__locate) { locate(true); return; }
+    S.overrides = merge(S.overrides, opt.patch);
+    ask();
+  });
+  $("#app").append(m);
+  setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
+}
+function closeMenu() { document.querySelectorAll(".chip-menu").forEach((m) => m.remove()); }
+function merge(ov, patch) {
+  const out = { ...ov };
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === "add_needs" || k === "remove_needs") {
+      const other = k === "add_needs" ? "remove_needs" : "add_needs";
+      out[k] = [...new Set([...(out[k] || []), ...v])];
+      out[other] = (out[other] || []).filter((n) => !v.includes(n));
+    } else out[k] = v;
+  }
+  return out;
+}
+
+function routeLinks(lat, lon) {
+  return {
+    "2ГИС": `https://2gis.kz/astana/directions/points/%7C${lon}%2C${lat}`,
+    "Яндекс": `https://yandex.kz/maps/?rtext=~${lat},${lon}&rtt=pd`,
+    "Google": `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=walking`,
+  };
+}
+
+function openRoute(lat, lon, btn) {
+  const links = routeLinks(lat, lon);
+  openChipMenuLike(btn, Object.entries(links).map(([name, url]) => ({ label: `${S.t.open_in} ${name}`, url })));
+}
+function openChipMenuLike(btn, opts) {
+  closeMenu();
+  const m = document.createElement("div");
+  m.className = "chip-menu";
+  m.setAttribute("role", "menu");
+  m.innerHTML = opts.map((o, i) => `<button role="menuitem" data-o="${i}">${esc(o.label)}${I.chev("i-s")}</button>`).join("");
+  const r = btn.getBoundingClientRect();
+  m.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 220))}px`;
+  m.style.top = `${Math.max(8, r.top - opts.length * 46 - 16)}px`;
+  m.addEventListener("click", (e) => { const b = e.target.closest("button[data-o]"); if (b) { closeMenu(); T.openLink(opts[+b.dataset.o].url); } });
+  $("#app").append(m);
+  setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
+}
+
+function shareText(it) {
+  return `Qydyr: ${it.title} — ${it.walk_min ? (it.by === "taxi" ? S.t.taxi_min : S.t.walk_min)(it.walk_min) : S.t.here}. ${it.status}`;
+}
+async function shareItem(it) {
+  const bot = S.config && S.config.bot_username;
+  const url = bot ? `https://t.me/${bot}?startapp=a_${S.answer.id}` : `${location.origin}${location.pathname}?answer=${S.answer.id}`;
+  const res = await T.share(url, shareText(it));
+  if (res === "copied") toast(S.t.shared);
+}
+
+async function openPlace(src, { reason } = {}) {
+  const pid = src.place_id;
+  S.place = { id: pid || src.event_id || src.title, title: src.title, category: src.category, walk: src.walk_min,
+              lat: src.lat, lon: src.lon, reason, card: null, qa: [], story: null };
+  go("place");
+  startCompass();
+  if (pid) {
+    try { S.place.card = await api.place(pid, S.at); renderSheet(); startCompass(); } catch (_) { /* events without a venue */ }
+  }
+}
+
+let stopHeading = null;
+function startCompass() {
+  if (stopHeading) stopHeading();
+  const p = S.place, a = S.answer && S.answer.anchor;
+  if (!p || !a) return;
+  const toRad = (x) => (x * Math.PI) / 180;
+  const y = Math.sin(toRad(p.lon - a.lon)) * Math.cos(toRad(p.lat));
+  const x = Math.cos(toRad(a.lat)) * Math.sin(toRad(p.lat)) - Math.sin(toRad(a.lat)) * Math.cos(toRad(p.lat)) * Math.cos(toRad(p.lon - a.lon));
+  const bearing = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  const dist = Math.round(Math.hypot((p.lat - a.lat) * 111320, (p.lon - a.lon) * 111320 * Math.cos(toRad(a.lat))));
+  stopHeading = T.onHeading((heading) => {
+    const c = $("#compass"), arrow = $("#arrow svg"), d = $("#dist");
+    if (!c || !arrow || heading == null) return;
+    c.hidden = false;
+    arrow.style.transform = `rotate(${bearing - heading}deg)`;
+    d.textContent = dist >= 1000 ? `${(dist / 1000).toFixed(1)} км` : `${dist} м`;
+  });
+}
+
+async function askPlace(q) {
+  const p = S.place;
+  if (!p || !q.trim()) return;
+  const entry = { q: q.trim(), a: null };
+  p.qa.push(entry);
+  renderSheet();
+  try {
+    entry.a = p.card ? await api.placeAsk(p.card.place_id, entry.q, S.at) : { answer: S.t.cert.unknown, certainty: "unknown", evidence: [] };
+  } catch (_) {
+    entry.a = { answer: S.t.net_error, certainty: "unknown", evidence: [] };
+  }
+  renderSheet();
+  const body = $("#sheet .body");
+  body.scrollTop = body.scrollHeight;
+}
+
+async function tellStory() {
+  const p = S.place;
+  if (!p || !p.card) { toast(S.t.cert.unknown); return; }
+  try {
+    p.story = await api.story(p.card.place_id, S.lang);
+    renderSheet();
+    if ("speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(p.story.text);
+      u.lang = SPEECH_LANG[S.lang];
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+  } catch (_) { toast(S.t.net_error); }
+}
+
+function toggleFav() {
+  const p = S.place;
+  const i = S.favs.findIndex((f) => f.id === p.id);
+  if (i >= 0) S.favs.splice(i, 1); else S.favs.push({ id: p.id, place_id: p.card ? p.card.place_id : null, title: p.title, lat: p.lat, lon: p.lon, category: p.category });
+  S.favs = S.favs.slice(-20);
+  T.store.set("favs", JSON.stringify(S.favs));
+  T.haptic.tap();
+  renderSheet();
+}
+
+let machineTimer = null;
+function bindMachine() {
+  const sl = $("#tslider");
+  if (!sl) return;
+  const s = slots();
+  sl.addEventListener("input", () => {
+    const d = s[+sl.value];
+    S.at = +sl.value === 0 ? null : isoLocal(d);
+    $("#tlabel").textContent = S.at ? `${S.t.day[local(S.at).getUTCDay()]} ${hm(S.at)}` : `${S.t.now} · ${hm(serverNow().toISOString())}`;
+    clearTimeout(machineTimer);
+    machineTimer = setTimeout(() => ask(), 380);
+  });
+}
+
+async function photoAsk(file) {
+  S.loading = true;
+  go("results");
+  toast(S.t.photo_wait, 1800);
+  try {
+    const r = await api.whereami(file, S.lang);
+    if (!r.found) { S.loading = false; go("home"); toast(S.t.photo_fail, 3500); return; }
+    toast(S.t.photo_found(r.place), 3500);
+    S.query = "";
+    S.overrides = {};
+    show(r.answer);
+  } catch (e) {
+    S.loading = false;
+    go("home");
+    toast(e.status === 503 ? S.t.photo_off : S.t.net_error, 3500);
+  }
+}
+
+async function locate(explicit = false) {
+  const p = await T.getLocation(explicit ? 12000 : 8000);
+  if (p) {
+    S.loc = { lat: T.roundCoord(p.lat), lon: T.roundCoord(p.lon) };
+    if (map && !["tour", "walk", "walkdone"].includes(S.view)) map.center(S.loc.lon, S.loc.lat, 14.5);   // a tour keeps its own frame
+    loadWalks();
+    loadWx(S.loc.lat, S.loc.lon);
+    if (explicit) ask();
+  } else {
+    if (explicit) toast(S.t.geo_denied);
+    S.walks = [];
+    if (S.view === "home") renderSheet();
+    if (!explicit) toast(S.t.no_geo, 4200);
+  }
+  renderTop();
+}
+
+async function loadWalks() {
+  if (!S.loc) return;
+  try {
+    S.walks = await api.walks({ lat: S.loc.lat, lon: S.loc.lon, lang: S.lang, ...(S.at ? { at: S.at } : {}) });
+  } catch (_) { S.walks = []; }
+  if (S.view === "home") renderSheet();
+}
+
+// voice input: the browser's speech recognition (Claude doesn't take audio; nothing is sent to us but text)
+function setupVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = $("#mic");
+  if (!SR) { mic.hidden = true; return; }
+  let rec = null;
+  mic.addEventListener("click", () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR();
+    rec.lang = SPEECH_LANG[S.lang];
+    rec.interimResults = true;
+    mic.classList.add("listening");
+    $("#q").placeholder = S.t.listening;
+    rec.onresult = (e) => { $("#q").value = Array.from(e.results).map((r) => r[0].transcript).join(" "); };
+    rec.onend = () => {
+      mic.classList.remove("listening");
+      $("#q").placeholder = S.t.placeholder;
+      rec = null;
+      if ($("#q").value.trim()) submit();
+    };
+    rec.onerror = () => { toast(S.t.voice_unsupported); };
+    rec.start();
+  });
+}
+
+function submit() {
+  const q = $("#q").value.trim();
+  if (!q) return;
+  S.query = q;
+  S.overrides = {};
+  $("#q").blur();
+  ask();
+}
+
+function setLang(lang) {
+  S.lang = lang;
+  S.t = STR[lang];
+  document.documentElement.lang = lang;
+  T.store.set("lang", lang);
+  renderTop();
+  renderSheet();
+  loadWalks();   // walk titles come from the server in the chosen language
+  loadTours();
+  if (S.tour && (S.view === "tour")) openTour(S.tour.id);
+  if (S.answer) ask();
+}
+
+function applyTheme(theme) {
+  S.theme = theme;
+  document.documentElement.dataset.theme = theme;
+  if (map && S.config) map.setStyle(S.config.map_style[theme], theme === "light" ? "#EEF3F8" : "#0A1424");
+}
+
+// ---------------------------------------------------------------- events
+function bind() {
+  $("#ask").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const act = b.dataset.act, i = b.dataset.i != null ? +b.dataset.i : null;
+    const a = S.answer;
+    switch (act) {
+      case "back": back(); break;
+      case "locate": locate(true); break;
+      case "machine": go("machine"); setSheet("half"); break;
+      case "machine-reset": S.at = null; S.preset = null; fx.set(null); ask(); break;
+      case "preset": S.preset = b.dataset.p || null; T.haptic.tap(); ask(); break;
+      case "results": go("results"); break;
+      case "surprise": surprise(); break;
+      case "saved": go("saved"); break;
+      case "lang": setLang({ ru: "kk", kk: "en", en: "ru" }[S.lang]); break;
+      case "quick": S.query = QUICK_QUERIES[i]; $("#q").value = S.t.quick[i]; S.overrides = {}; ask(); break;
+      case "chip": e.stopPropagation(); openChipMenu(b, a.chips[i]); break;
+      case "whynot": go("whynot"); setSheet("full"); break;
+      case "select":
+        if (e.target.closest("button")) break;
+        S.sel = i; renderSheet(); map.show(a, i, { fit: false, labels: { you: S.t.you_here } }); map.focus(a.items[i].lon, a.items[i].lat); T.haptic.tap(); break;
+      case "route": openRoute(a.items[i].lat, a.items[i].lon, b); break;
+      case "route-place": openRoute(S.place.lat, S.place.lon, b); break;
+      case "share": shareItem(a.items[i]); break;
+      case "share-place": shareItem({ title: S.place.title, walk_min: S.place.walk, status: (S.place.card && S.place.card.badge) || "" }); break;
+      case "place": openPlace(a.items[i]); setSheet("full"); break;
+      case "rej": { const r = a.rejected[i]; map.popup(r); map.focus(r.lon, r.lat); if (r.place_id) openPlace(r, { reason: r.reason }); break; }
+      case "story": tellStory(); break;
+      case "fav": toggleFav(); break;
+      case "fav-open": { const f = S.favs[i]; S.place = null; openPlace({ place_id: f.place_id, title: f.title, lat: f.lat, lon: f.lon, category: f.category }); break; }
+      case "qa-suggest": askPlace(S.t.qa_suggest[i]); break;
+      case "walk": { const w = S.walks[i]; S.walkTitle = w.title; S.walkTour = w.tour || null; show(w.answer); S.walkTitle = w.title; renderSheet(); break; }
+      case "walk-gen": case "walk-gen-demo": if (S.walkTour) { S.tour = S.walkTour; startWalk({ sim: act === "walk-gen-demo" }); } break;
+      case "tour": openTour(b.dataset.id); break;
+      case "tour-stop": focusStop(i); break;
+      case "walk-start": startWalk(); break;
+      case "walk-demo": startWalk({ sim: true }); break;
+      case "walk-here": arriveManually(); break;
+      case "walk-next": nextFromStop(); break;
+      case "walk-listen": { const k = S.walk; if (!k) break; if (k.speaking) { speechSynthesis.cancel(); k.speaking = false; renderKeep(); } else { const st = S.tour.stops_list.find((x) => x.id === k.current); if (st) speakStop(st); } break; }
+      case "walk-more": storyAtStop(); break;
+      case "walk-finish": finishWalk(); break;
+      case "walk-invite": inviteWalk(); break;
+      case "walk-again": S.walkDone = null; S.stack = []; go("home", false); T.backButton(false); break;
+      case "resume": if (S.saved) { const sv = S.saved; if (S.tour && S.tour.id === sv.tourId) startWalk({ resume: sv }); else openTour(sv.tourId).then(() => S.tour && startWalk({ resume: sv })); } break;
+      case "link": T.openLink(b.dataset.url); break;
+      case "friends": T.openLink(`https://t.me/${S.config.bot_username}?startgroup=go`); break;
+      case "vote": api.feedback(a.id, b.dataset.v).catch(() => {}); toast(S.lang === "ru" ? "Спасибо, учту" : S.lang === "kk" ? "Рақмет" : "Thanks"); break;
+      default: break;
+    }
+  });
+  document.addEventListener("submit", (e) => {
+    if (e.target.matches("[data-act=qa-form]")) { e.preventDefault(); const inp = $("#qa"); askPlace(inp.value); inp.value = ""; }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMenu(); back(); } });
+  document.addEventListener("change", (e) => { if (e.target.id === "photo" && e.target.files[0]) photoAsk(e.target.files[0]); });
+
+  // the sheet: drag the handle between low / half / full
+  const sheet = $("#sheet"), grab = $("#sheet .grab");
+  let y0 = null, h0 = 0;
+  grab.addEventListener("pointerdown", (e) => { y0 = e.clientY; h0 = sheet.getBoundingClientRect().top; sheet.classList.add("dragging"); grab.setPointerCapture(e.pointerId); });
+  grab.addEventListener("pointermove", (e) => {
+    if (y0 == null) return;
+    const top = Math.max(window.innerHeight * 0.12, Math.min(window.innerHeight * 0.8, h0 + (e.clientY - y0)));
+    sheet.style.setProperty("--peek", `${window.innerHeight - top}px`);
+  });
+  grab.addEventListener("pointerup", (e) => {
+    sheet.classList.remove("dragging");
+    const moved = Math.abs(e.clientY - y0);
+    const frac = 1 - sheet.getBoundingClientRect().top / window.innerHeight;
+    y0 = null;
+    if (moved < 6) { setSheet(S.sheet === "full" ? "half" : "full"); return; }
+    setSheet(frac > 0.66 ? "full" : frac > 0.34 ? "half" : "low");
+  });
+}
+
+// ---------------------------------------------------------------- start
+async function start() {
+  const saved = await T.store.get("lang");
+  if (saved && STR[saved]) { S.lang = saved; S.t = STR[saved]; document.documentElement.lang = saved; }
+  try { S.favs = JSON.parse((await T.store.get("favs")) || "[]"); } catch (_) { S.favs = []; }
+  S.theme = T.telegramTheme();
+  document.documentElement.dataset.theme = S.theme;
+  $("#logo").innerHTML = LOGO;
+  $("#mic").innerHTML = I.mic();
+  $("#go").innerHTML = I.send();
+  T.initTelegram({ onBack: back, theme: S.theme });
+  if (T.tg) T.tg.onEvent && T.tg.onEvent("themeChanged", () => applyTheme(T.telegramTheme()));
+  setSheet("half");
+  renderTop();
+  renderSheet();
+  bind();
+  setupVoice();
+  fx = new WeatherFx($("#fx"));
+  try { S.config = await api.config(); } catch (_) { S.config = { map_style: { dark: "", light: "" }, attribution: ["© OpenStreetMap contributors"] }; }
+  map = new CityMap($("#map"), {
+    styleUrl: S.config.map_style[S.theme] || { version: 8, sources: {}, layers: [] },
+    bg: S.theme === "light" ? "#EEF3F8" : "#0A1424",
+    attribution: (S.config.attribution || []).join(" · "),
+    onPick: (i) => { S.sel = i; if (S.view !== "results") go("results"); else renderSheet(); map.show(S.answer, i, { fit: false, labels: { you: S.t.you_here } }); T.haptic.tap(); },
+    onReject: (i) => { if (S.view !== "whynot") go("whynot"); document.querySelectorAll(".rej").forEach((r, k) => r.classList.toggle("sel", k === i)); },
+  });
+  T.onShake(() => { if (!S.walk) surprise(); });
+  try { const sv = JSON.parse((await T.store.get("walk")) || "null"); if (sv && sv.tourId) S.saved = sv; } catch (_) { S.saved = null; }
+  loadTours();
+  const sp = T.startParam();
+  const tourId = sp.startsWith("t_") ? sp.slice(2) : new URLSearchParams(location.search).get("tour");
+  const id = sp.startsWith("a_") ? sp.slice(2) : sp.startsWith("t_") ? "" : sp;
+  if (tourId) openTour(tourId);
+  else if (id) {
+    try { show(await api.answer(id)); } catch (_) { /* expired: start fresh */ }
+  }
+  locate(false);
+}
+
+start();

@@ -1,0 +1,33 @@
+# The brief's five scenarios + the example, on real data (live weather, current time).
+# Only rules that must hold anywhere are checked here: run `python -m qydyr_data eval` after `events`.
+scenarios:
+  - id: brief_1_mega_walk
+    text: "Я сейчас возле Mega Silk Way, хочу прогуляться 30–60 минут — что посоветуете?"
+    expect: {anchor_contains: "Mega", min_items: 1}
+
+  - id: brief_2_quiet_coffee_socket
+    text: "Хочу тихое место с кофе и розеткой недалеко от меня."
+    lat: 51.0900
+    lon: 71.4165
+    expect: {min_items: 1}
+
+  - id: brief_3_kids
+    text: "Еду с ребёнком — где рядом есть детские площадки или музей с интерактивами?"
+    lat: 51.0900
+    lon: 71.4165
+    expect: {no_subcategories: [bar, pub, nightclub]}
+
+  - id: brief_4_tourist_flight
+    text: "Я - турист, у меня 2 часа перед вылетом: что можно посмотреть поблизости?"
+    lat: 51.1283
+    lon: 71.4305
+    expect: {note_contains: "свободного времени"}
+
+  - id: brief_5_night
+    text: "Ищу необычную ночную активность (последние пару часов)."
+    lat: 51.0900
+    lon: 71.4165
+
+  - id: brief_example_expo
+    text: "Я у здании Экспо 2017, хочу что-то необычное на 1–2 часа, пешком."
+    expect: {anchor_contains: "Нур Алем"}

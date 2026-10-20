@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A1424">
+<meta name="description" content="Qydyr — подскажу, куда пойти рядом в Астане прямо сейчас: с учётом времени, погоды, часов работы и событий.">
+<title>Qydyr — куда пойти рядом</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300AFCA' stroke-width='1.8'%3E%3Ccircle cx='12' cy='12' r='9.5'/%3E%3Ccircle cx='12' cy='12' r='3.2'/%3E%3Cpath d='M4.2 7.5C8 10 16 10 19.8 7.5M4.2 16.5C8 14 16 14 19.8 16.5M8.8 2.9C10.5 7 10.5 17 8.8 21.1M15.2 2.9C13.5 7 13.5 17 15.2 21.1'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://telegram.org/js/telegram-web-app.js?59" defer></script>
+<script type="module" src="assets/app.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="map" role="region" aria-label="Карта"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <div class="top">
+    <form id="ask" class="ask" role="search" autocomplete="off">
+      <span id="logo" aria-hidden="true"></span>
+      <label class="sr-only" for="q">Что хотите сделать</label>
+      <input id="q" type="text" enterkeyhint="search" placeholder="Кофе и тихо, на час…">
+      <button id="mic" class="icon-btn" type="button" aria-label="Сказать голосом"></button>
+      <button id="go" class="icon-btn solid" type="submit" aria-label="Спросить"></button>
+    </form>
+    <div id="chips" class="chips" role="toolbar" aria-label="Как я понял запрос"></div>
+    <div id="wx" class="wx" hidden></div>
+  </div>
+
+  <section id="sheet" class="sheet" aria-label="Подборка">
+    <div class="grab" role="button" tabindex="0" aria-label="Развернуть или свернуть"><span></span></div>
+    <div class="body" aria-live="polite"></div>
+  </section>
+</div>
+<noscript>Для работы Qydyr нужен JavaScript.</noscript>
+</body>
+</html>

@@ -1,0 +1,74 @@
+# Manual curation on top of OpenStreetMap, matched by place name in any spelling.
+# Aliases are what people actually say ("я у Чупа-чупса") and what afishas write.
+# Keep aliases specific: a short generic alias like "Мега" would grab unrelated places.
+# attrs feed the assistant's knowledge (view, interactive, ...), shown as data, not as guesses.
+
+Байтерек:
+  aliases: [Чупа-чупс, Чупа чупс, Baiterek, Bayterek, Бәйтерек, монумент Байтерек]
+  indoor: mixed          # observation deck inside, square outside
+  attrs: {view: "yes"}
+
+Дворец мира и согласия:
+  aliases: [Пирамида, Pyramid of Peace, Palace of Peace and Reconciliation, Бейбітшілік және келісім сарайы]
+  indoor: indoor
+
+Хан Шатыр:
+  aliases: [Khan Shatyr, Хан-Шатыр, Хан Шатыр ТРЦ, ТРЦ Хан Шатыр, Шатёр]
+  indoor: indoor
+
+Национальный музей Республики Казахстан:
+  aliases: [Национальный музей РК, Национальный музей, Нацмузей, Нацмузей РК,
+            National Museum of the Republic of Kazakhstan, Қазақстан Республикасының Ұлттық музейі, Ұлттық музей]
+  indoor: indoor
+
+Astana Opera:
+  aliases: [Астана Опера, ГТОБ Астана Опера, Государственный театр оперы и балета Астана Опера]
+  indoor: indoor
+
+Нур Алем:
+  aliases: [Nur Alem, Музей энергии будущего, Museum of Future Energy, Сфера Нур Алем,
+            EXPO, Экспо, ЭКСПО, Экспо 2017, EXPO 2017, здание Экспо, шар Экспо]
+  indoor: indoor
+  attrs: {interactive: "yes"}
+
+Mega Silk Way:
+  aliases: [Мега Силк Уэй, Мега Силк Вей, MEGA Silk Way, ТРЦ Mega Silk Way, Мега Силквей]
+  indoor: indoor
+
+Astana IT University:
+  aliases: [AITU, АИТУ, Astana IT, Астана IT университет, Астана Ай Ти, Астана Айти]
+  indoor: indoor
+
+Международный аэропорт Нурсултан Назарбаев:
+  aliases: [Nursultan Nazarbayev International Airport, аэропорт, аэропорт Астаны, аэропорт Астана,
+            Astana airport, NQZ, әуежай]
+  indoor: indoor
+
+# Venues that afishas (sxodim) name differently from OSM
+Гараж:
+  aliases: [Garage music bar, Garage Music Bar]
+  indoor: indoor
+
+Мята Лаундж:
+  aliases: [Мята Lounge, Мята, Myata Lounge]
+  indoor: indoor
+
+Жастар театры:
+  aliases: [Молодёжный театр, Молодежный театр, Театр Жастар, Жастар театр]
+  indoor: indoor
+
+Қ.Қуанышбаев атындағы Мемлекеттік академиялық қазақ музыкалық-драма театры:
+  aliases: [Қалибек Қуанышбаев атындағы Қазақ ұлттық музыкалық драма театры, Театр им. Куанышбаева,
+            Театр Куанышбаева, Казахский Государственный Театр Им. Куанышбаева,
+            Казахский музыкально-драматический театр им. К. Куанышбаева]
+  indoor: indoor
+
+Роза Бағланова атындағы Қазақконцерт мемлекеттік академиялық концерттік ұйымы:
+  aliases: [Қазақконцерт, Казахконцерт, Qazaqconcert, Қазақконцерт им. Розы Баглановой,
+            ЦКЗ Казахстан, ЦКЗ «Казахстан», ЦКЗ Qazaqstan, Центральный концертный зал Казахстан,
+            QAZAQCONCERT (ЦКЗ «QAZAQSTAN»)]
+  indoor: indoor
+
+Астаналық Цирк:
+  aliases: [Астанинский цирк, Цирк Астаны, Казахский государственный цирк, Столичный цирк, Astana Circus]
+  indoor: indoor

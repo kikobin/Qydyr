@@ -1,0 +1,196 @@
+# Event sources for Astana. Add a source = add a block here, no code changes.
+#
+# kind:
+#   listing        afisha listing -> event pages (link_pattern) -> one event per page
+#   article_index  rubric/tag page -> digest articles -> several events per article
+#   page           one page (e.g. a museum's "exhibitions" page); mode: page | digest
+#   telegram       public channels, read via t.me/s/<channel>
+# reliability: how much we trust the source (0..1), feeds into event confidence.
+#
+# Before enabling a source: check its robots.txt and terms of use, keep the request rate low
+# (the fetcher waits between requests and honours robots.txt), always link back to the source.
+
+sources:
+  - id: sxodim_afisha
+    kind: listing
+    title: Sxodim — афиша Астаны
+    url: https://sxodim.com/astana/afisha
+    link_pattern: '^https://sxodim\.com/astana/event/[a-z0-9-]+/?$'
+    pages: 20
+    max_items: 400
+    reliability: 0.8
+
+  - id: sxodim_exhibitions
+    kind: listing
+    title: Sxodim — выставки и ярмарки
+    url: https://sxodim.com/astana/events/vystavki
+    link_pattern: '^https://sxodim\.com/astana/event/[a-z0-9-]+/?$'
+    kind_hint: exhibition
+    pages: 5
+    max_items: 100
+    reliability: 0.8
+
+  - id: sxodim_free
+    kind: listing
+    title: Sxodim — бесплатные события
+    url: https://sxodim.com/astana/events/besplatnye-sobytiya
+    link_pattern: '^https://sxodim\.com/astana/event/[a-z0-9-]+/?$'
+    is_free_hint: true
+    pages: 5
+    max_items: 100
+    reliability: 0.8
+
+  - id: sxodim_kids
+    kind: listing
+    title: Sxodim — для детей
+    url: https://sxodim.com/astana/events/dlya-detey
+    link_pattern: '^https://sxodim\.com/astana/event/[a-z0-9-]+/?$'
+    kind_hint: kids
+    pages: 5
+    max_items: 100
+    reliability: 0.8
+
+  - id: digitalbusiness_kuda_shodit
+    kind: article_index
+    title: Digital Business — «куда сходить»
+    url: https://digitalbusiness.kz/tag/kuda-shodit
+    link_pattern: '^https://digitalbusiness\.kz/\d{4}-\d{2}-\d{2}/[^/]+/?$'
+    link_text_pattern: 'астан'          # only articles about Astana
+    max_items: 8
+    reliability: 0.7
+
+  # ---------- ticket aggregators (schema.org Event JSON-LD on every event page) ----------
+  # Ticketon puts fast clients into a Queue-it waiting room: keep delay_s high and lists modest.
+  # Its JSON-LD startDate on repertory shows can be months old: such dates fall out as past.
+  - id: ticketon_theatres
+    kind: listing
+    title: Freedom Ticketon — театры Астаны
+    url: https://ticketon.kz/astana/theatres
+    link_pattern: '^https://ticketon\.kz/(theatres|concerts|children|museums|stand-up|entertainment|sports|knowledge-skills)/event/[a-z0-9-]+$'
+    kind_hint: performance
+    pages: 3
+    max_items: 60
+    delay_s: 4
+    reliability: 0.85
+
+  - id: ticketon_concerts
+    kind: listing
+    title: Freedom Ticketon — концерты Астаны
+    url: https://ticketon.kz/astana/concerts
+    link_pattern: '^https://ticketon\.kz/(theatres|concerts|children|museums|stand-up|entertainment|sports|knowledge-skills)/event/[a-z0-9-]+$'
+    kind_hint: concert
+    pages: 3
+    max_items: 50
+    delay_s: 4
+    reliability: 0.85
+
+  - id: ticketon_exhibitions
+    kind: listing
+    title: Freedom Ticketon — музеи и выставки Астаны
+    url: https://ticketon.kz/astana/museums
+    link_pattern: '^https://ticketon\.kz/museums/event/[a-z0-9-]+$'
+    kind_hint: exhibition
+    max_items: 30
+    delay_s: 4
+    reliability: 0.85
+
+  - id: ticketon_kids
+    kind: listing
+    title: Freedom Ticketon — детям (Астана)
+    url: https://ticketon.kz/astana/children
+    link_pattern: '^https://ticketon\.kz/(theatres|concerts|children|museums|stand-up|entertainment|sports|knowledge-skills)/event/[a-z0-9-]+$'
+    kind_hint: kids
+    pages: 2
+    max_items: 30
+    delay_s: 4
+    reliability: 0.85
+
+  - id: ticketon_standup
+    kind: listing
+    title: Freedom Ticketon — стендап (Астана)
+    url: https://ticketon.kz/astana/stand-up
+    link_pattern: '^https://ticketon\.kz/(stand-up|entertainment|concerts)/event/[a-z0-9-]+$'
+    kind_hint: standup
+    pages: 2
+    max_items: 40
+    delay_s: 4
+    reliability: 0.8
+
+  - id: topbilet_astana
+    kind: listing
+    title: Topbilet — афиша Астаны
+    url: https://topbilet.kz/ru/city/astana
+    link_pattern: '^https://topbilet\.kz/ru/event/[a-z0-9-]+$'
+    max_items: 40
+    reliability: 0.8
+
+  - id: zakazbiletov_astana
+    kind: listing
+    title: Zakazbiletov — события Астаны
+    url: https://zakazbiletov.kz/ru/kazakhstan          # nationwide page; the pattern keeps Astana only
+    link_pattern: '^https://zakazbiletov\.kz/ru/5-astana/\d+-[a-z-]+/[a-z0-9-]+/\d+$'
+    max_items: 40                                       # robots.txt disallows ?page=: one page only
+    reliability: 0.8
+
+  # ---------- venues' own pages: the most reliable source for their programme ----------
+  - id: qazaqconcert
+    kind: listing
+    title: Қазақконцерт им. Р. Баглановой (вкл. театр Astana Musical)
+    url: https://qazaqconcert.kz/ru/posters
+    link_pattern: '^https://qazaqconcert\.kz/ru/poster/[a-z0-9_-]+$'
+    venue_hint: Қазақконцерт им. Розы Баглановой
+    max_items: 30
+    reliability: 0.95
+
+  - id: national_museum
+    kind: listing
+    title: Национальный музей РК — афиша
+    url: https://nmrk.kz/ru/press/affiche/
+    link_pattern: '^https://nmrk\.kz/ru/press/affiche/\d+/?$'
+    venue_hint: Национальный музей Республики Казахстан, пр. Тәуелсіздік, 54
+    kind_hint: exhibition
+    max_items: 8                    # newest first; the real dates are in the text, not in the page stamp
+    reliability: 0.9
+
+  - id: astana_ballet
+    kind: page
+    mode: digest
+    title: Театр «Астана Балет» — афиша
+    url: https://astanaballet.com/ru/posters
+    venue_hint: Театр «Астана Балет», пр. Ұлы Дала, 43
+    kind_hint: performance
+    reliability: 0.95
+
+  - id: gorky_theatre
+    kind: page
+    mode: digest
+    title: Русский драмтеатр им. М. Горького — афиша
+    url: https://gorkytheatre.kz/poster
+    venue_hint: Театр им. М. Горького, ул. Желтоқсан, 11
+    kind_hint: performance
+    reliability: 0.9
+
+  - id: astana_philharmonic
+    kind: listing
+    title: Филармония им. Е. Рахмадиева — афиша
+    url: https://astana-filarmonia.kz/ru/afyshalaru
+    link_pattern: '^https://astana-filarmonia\.kz/ru/afyshalaru/\d+-[a-z0-9-]+$'
+    venue_hint: Государственная академическая филармония им. Е. Рахмадиева
+    kind_hint: concert
+    max_items: 10
+    reliability: 0.85
+
+  # ---------- public Telegram channels (names without @) ----------
+  - id: telegram_afisha
+    kind: telegram
+    title: Telegram — афиша-каналы Астаны
+    channels: [afisha_orsa, astana_afisha, sxodim_astana]
+    max_age_days: 10
+    reliability: 0.65
+
+  - id: telegram_official
+    kind: telegram
+    title: Telegram — официальные каналы площадок
+    channels: [astanaballet, astana_hub]
+    max_age_days: 14
+    reliability: 0.75

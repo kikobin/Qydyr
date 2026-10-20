@@ -1,0 +1,17 @@
+# Render Blueprint: one web service (API + Mini App + bot). Database: Supabase (PostGIS) — paste its
+# Session pooler URI into DATABASE_URL. Render gives an https URL: put it into QYDYR_PUBLIC_URL.
+services:
+  - type: web
+    name: qydyr
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: QYDYR_PUBLIC_URL
+        sync: false

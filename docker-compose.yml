@@ -1,0 +1,37 @@
+# Local stack: PostGIS + Qydyr (API, Mini App at /app, Telegram bot).
+#   cp .env.example .env   # TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, QYDYR_PUBLIC_URL (https)
+#   docker compose up --build
+#   docker compose exec app python -m qydyr_data places && docker compose exec app python -m qydyr_data events
+#   or, offline: docker compose exec app python -m qydyr_data demo-data
+# A temporary https URL for the Mini App: docker compose --profile tunnel up  (see the tunnel logs)
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: qydyr
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qydyr"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build: .
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/qydyr
+    depends_on:
+      db: {condition: service_healthy}
+    ports: ["8000:8000"]
+    restart: unless-stopped
+
+  tunnel:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://app:8000
+    depends_on: [app]
+
+volumes:
+  pgdata:

@@ -1,0 +1,57 @@
+{
+  "_comment": "Test data in Overpass format. Coordinates are approximate; real data comes from the Overpass API.",
+  "_fetched_at": "2026-10-20T03:00:00+00:00",
+  "elements": [
+    {"type": "node", "id": 1001, "lat": 51.1186, "lon": 71.4701, "tags": {
+      "tourism": "museum", "name": "Национальный музей Республики Казахстан",
+      "name:kk": "Қазақстан Республикасының Ұлттық музейі", "name:en": "National Museum of the Republic of Kazakhstan",
+      "opening_hours": "Tu-Su 10:00-18:00; Tu[-1] off", "addr:street": "проспект Тәуелсіздік", "addr:housenumber": "54",
+      "wheelchair": "yes", "website": "https://example.org/museum"}},
+    {"type": "way", "id": 2002, "center": {"lat": 51.1307, "lon": 71.4146}, "tags": {
+      "amenity": "theatre", "name": "Astana Opera", "name:ru": "Астана Опера", "building": "yes"}},
+    {"type": "node", "id": 1003, "lat": 51.1283, "lon": 71.4305, "tags": {
+      "tourism": "attraction", "man_made": "tower", "name": "Бәйтерек", "name:ru": "Байтерек",
+      "opening_hours": "Mo-Su 10:00-21:00"}},
+    {"type": "way", "id": 2004, "center": {"lat": 51.1325, "lon": 71.4038}, "tags": {
+      "shop": "mall", "name": "Хан Шатыр", "building": "retail", "opening_hours": "Mo-Su 10:00-22:00"}},
+    {"type": "node", "id": 1005, "lat": 51.1192, "lon": 71.4689, "tags": {
+      "amenity": "cafe", "name": "Кафе «Коктем»", "opening_hours": "Mo-Su 08:00-23:00",
+      "internet_access": "wlan", "outdoor_seating": "no"}},
+    {"type": "node", "id": 1006, "lat": 51.1180, "lon": 71.4720, "tags": {"leisure": "playground"}},
+    {"type": "node", "id": 1007, "lat": 51.0905, "lon": 71.4170, "tags": {
+      "amenity": "bar", "name": "Ночной бар Луна", "opening_hours": "Mo-Su 18:00-04:00"}},
+    {"type": "way", "id": 2008, "center": {"lat": 51.1180, "lon": 71.4380}, "tags": {
+      "leisure": "park", "name": "Президентский парк"}},
+    {"type": "node", "id": 1009, "lat": 51.0890, "lon": 71.4160, "tags": {
+      "tourism": "museum", "name": "Нур Алем", "opening_hours": "Tu-Su 10:00-20:00",
+      "description": "Музей энергии будущего: интерактивные экспозиции на восьми этажах"}},
+    {"type": "way", "id": 2010, "center": {"lat": 51.0897, "lon": 71.4078}, "tags": {
+      "shop": "mall", "name": "Mega Silk Way", "opening_hours": "Mo-Su 10:00-22:00"}},
+    {"type": "node", "id": 1011, "lat": 51.1, "lon": 71.4, "tags": {"amenity": "atm", "name": "Банкомат"}},
+    {"type": "node", "id": 1012, "lat": 51.1, "lon": 71.4, "tags": {"amenity": "cafe"}},
+    {"type": "relation", "id": 3013, "center": {"lat": 51.1203, "lon": 71.4735}, "tags": {
+      "historic": "memorial", "name": "Монумент «Казак Ели»"}},
+    {"type": "node", "id": 1014, "lat": 51.1240, "lon": 71.4500, "tags": {
+      "tourism": "viewpoint", "name": "Смотровая на набережной", "opening_hours": "not a valid rule"}},
+    {"type": "node", "id": 1015, "lat": 51.0912, "lon": 71.4123, "tags": {
+      "amenity": "cafe", "name": "Кофейня «Тихий угол»", "opening_hours": "Mo-Su 08:00-22:00",
+      "internet_access": "wlan", "wheelchair": "yes"}},
+    {"type": "node", "id": 1016, "lat": 51.0906, "lon": 71.4180, "tags": {
+      "amenity": "university", "name": "Astana IT University"}},
+    {"type": "node", "id": 1017, "lat": 51.0222, "lon": 71.4669, "tags": {
+      "aeroway": "terminal", "name": "Международный аэропорт Нурсултан Назарбаев",
+      "name:en": "Nursultan Nazarbayev International Airport"}},
+    {"type": "node", "id": 1018, "lat": 51.0893, "lon": 71.4110, "tags": {"leisure": "playground"}},
+    {"type": "way", "id": 2019, "center": {"lat": 51.0880, "lon": 71.4190}, "tags": {
+      "leisure": "park", "name": "Сквер у EXPO"}},
+    {"type": "node", "id": 1020, "lat": 51.0915, "lon": 71.4200, "tags": {
+      "amenity": "coworking_space", "name": "Коворкинг «Орбита»",
+      "opening_hours": "Mo-Fr 09:00-21:00; Sa 10:00-18:00", "internet_access": "wlan"}},
+    {"type": "node", "id": 1021, "lat": 51.0896, "lon": 71.4145, "tags": {
+      "tourism": "artwork", "name": "Арт-объект «Ветер степи»"}},
+    {"type": "node", "id": 1022, "lat": 51.0920, "lon": 71.4150, "tags": {
+      "amenity": "nightclub", "name": "Клуб «Полночь»", "opening_hours": "Fr,Sa 23:00-05:00"}},
+    {"type": "node", "id": 1023, "lat": 51.1290, "lon": 71.4290, "tags": {
+      "amenity": "restaurant", "name": "Ресторан «Дастархан»", "opening_hours": "Mo-Su 11:00-23:00"}}
+  ]
+}

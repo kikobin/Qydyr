@@ -1,0 +1,447 @@
+# Прогулки с гидом (guided walks) — hand-made routes for the walk mode.
+#
+# Every fact has a source the researcher opened; numbers and dates follow that source, disputed details
+# were left out, legends are called legends. Coordinates come from OpenStreetMap data (via Mapcarta),
+# 2GIS and Wikipedia; coord_source says which. Read by qydyr_data/assistant/tours.py, checked by
+# tests/test_tours.py (every fact sourced, no emoji, stops within walking distance).
+#
+# Fields: id, title/subtitle {ru,kk,en}, duration_min, distance_km, outdoor, hours {ru,en,source},
+# stops: id, name {ru,kk,en}, lat, lon, coord_source, radius_m (how close counts as "arrived"),
+# outdoor, facts [{ru, en, source}], tip {ru, en}.
+
+tours:
+  - id: botanical
+    title: {ru: "Ботанический сад", kk: "Ботаникалық бақ", en: "Botanical Garden"}
+    subtitle: {ru: "Пруд, оранжереи и чаша «Тайказан»", kk: "Тоған, оранжереялар және «Тайқазан»", en: "Pond, greenhouses and the Taikazan bowl"}
+    duration_min: 60
+    distance_km: 1.2
+    outdoor: true
+    # best_season: fountains start on 1 May (https://www.inform.kz/ru/kogda-zapustyat-fontany-v-astane_a4061718);
+    # greenhouses keep a winter schedule (https://www.astanabotsad.kz/ru/novosti/zha-zhmys-kestesi)
+    best_season: {ru: "С мая, когда в Астане традиционно включают фонтаны; оранжереи работают и зимой", en: "From May, when Astana traditionally switches its fountains on; the greenhouses also open in winter"}
+    hours: {ru: "Оранжереи: ежедневно, кроме понедельника (санитарный день), 10:00–19:00, перерыв 13:00–14:00, касса до 18:30 (зимний график с 1 октября 2026).", en: "Greenhouses: daily except Monday (sanitary day), 10:00–19:00, lunch break 13:00–14:00, ticket desk until 18:30 (winter schedule from 1 October 2026).", source: "https://www.astanabotsad.kz/ru/novosti/zha-zhmys-kestesi"}
+    stops:
+      - id: pond
+        name: {ru: "Искусственный водоём", kk: "Жасанды су қоймасы", en: "Artificial pond"}
+        # APPROXIMATE (+/- ~100 m): no reachable map source has the pond outline. Point placed on the garden's main axis
+        # (Ulytau alley, greenhouse pair, garden centre and Taikazan lie on one line in 2GIS data), ~130 m east of the
+        # greenhouses, i.e. between them and the Turkestan St entrance, where welcome.kz, newtimes.kz and tourister.ru put
+        # the pond and its middle bridge. Other points used: https://2gis.kz/astana/geo/70030076164542454 (Ulytau alley),
+        # https://2gis.kz/astana/geo/70030076166145006 (garden centre).
+        lat: 51.10551
+        lon: 71.42162
+        coord_source: "https://2gis.kz/astana/firm/70000001061518573"
+        radius_m: 120
+        outdoor: true
+        facts:
+          - ru: "Сад открыли 2 июля 2018 года, к 20-летию столицы. И это не просто парк: он филиал Института ботаники и фитоинтродукции и хранит генофонд редких и особо ценных растений."
+            en: "The garden opened on 2 July 2018, for the capital's 20th anniversary. It is more than a park: it is a branch of the Institute of Botany and Phytointroduction and preserves the gene pool of rare and especially valuable plants."
+            source: "https://www.astanabotsad.kz/o-nas"
+          - ru: "Площадь пруда — около 45 тысяч квадратных метров, глубина — 3,5 метра. И он не только для красоты: его водой поливают растения сада."
+            en: "The pond covers about 45,000 square metres and is 3.5 metres deep. It is not just for looks: its water is used to irrigate the garden's plants."
+            source: "https://newtimes.kz/eksklyuziv/186903-ot-megapolisa-ne-ubezhish-unylyi-vid-botanicheskogo-sada-stolitsy"
+          - ru: "Вода приходит сюда из канала Нура, а вместе с ней — мальки, так что летом в пруду можно заметить рыбу. С первыми морозами её не остаётся: водоём промерзает до дна."
+            en: "The water comes from the Nura canal, and fish fry come with it, so in summer you may spot fish here. After the first frosts none are left: the pond freezes to the bottom."
+            source: "https://newtimes.kz/eksklyuziv/186903-ot-megapolisa-ne-ubezhish-unylyi-vid-botanicheskogo-sada-stolitsy"
+        tip: {ru: "Пройдите по мостам над водой: с мая в пруду работают фонтаны. Дальше по маршруту — две стеклянные оранжереи.", en: "Walk across the bridges over the water; from May the pond's fountains are running. Next on the route are the two glass greenhouses."}
+      - id: greenhouses
+        name: {ru: "Оранжерейный комплекс", kk: "Оранжерея кешені", en: "Greenhouse complex"}
+        # midpoint between the two greenhouse buildings: tropical, Orynbor 14d (51.10628, 71.41996, this URL)
+        # and succulents, Orynbor 14e (51.10530, 71.41963, https://2gis.kz/astana/firm/70000001047796501)
+        lat: 51.10579
+        lon: 71.41979
+        coord_source: "https://2gis.kz/astana/firm/70000001061518573"
+        radius_m: 80
+        outdoor: false
+        facts:
+          - ru: "В 2018 году здесь посадили 12 саженцев апельсина — гибрида миртолистного апельсина из Юго-Восточной Азии. Полноценный урожай пришёл лишь через несколько лет: в 2025 году спелыми плодами угощали гостей."
+            en: "In 2018 staff planted 12 orange seedlings here, a hybrid of the myrtle-leaved orange from Southeast Asia. A full harvest took several years: in 2025 visitors were treated to ripe fruit."
+            source: "https://www.inform.kz/ru/vastane-sozreli-apelsini-56d5da"
+          - ru: "Растения везли из Испании, Голландии и Германии, причём из разных питомников — чтобы снизить риск болезней. К каждому растению проведена система капельного орошения."
+            en: "Plants were brought from Spain, the Netherlands and Germany, from several nurseries to reduce the risk of disease. A drip-irrigation system runs to every plant."
+            source: "https://www.inform.kz/ru/kak-vyglyadyat-oranzherei-botanicheskogo-sada-astany_a3350659"
+          - ru: "По проекту 2013 года здесь должно было стоять восемь оранжерей, соединённых крытыми переходами, — с павильоном бабочек и садом орхидей."
+            en: "The 2013 design called for eight greenhouses linked by covered walkways, including a butterfly pavilion and an orchid garden."
+            source: "https://astanatimes.com/2013/07/new-botanical-garden-to-beautify-astana-by-2017/"
+        tip: {ru: "Загляните в обе: в тропической посреди атриума — фонтан с водопадом, в оранжерее суккулентов найдите круглый эхинокактус Грузона. Растения трогать нельзя, а ростки можно купить.", en: "Visit both: the tropical house has a fountain with a waterfall in its central atrium; in the succulent house, look for the round golden barrel cactus (Echinocactus grusonii). Don't touch the plants, but you can buy seedlings."}
+      - id: earth_mother_garden
+        name: {ru: "Сад Земли и Матери", kk: "Жер және Ана бағы", en: "Garden of Earth and Mother"}
+        # APPROXIMATE: 2GIS point of the garden object itself; the circular central garden is assumed here because the
+        # layout is symmetric about this point (greenhouses at +/-56 m from the axis, Taikazan on the axis).
+        lat: 51.10634
+        lon: 71.41619
+        coord_source: "https://2gis.kz/astana/geo/70030076166145006"
+        radius_m: 100
+        outdoor: true
+        facts:
+          - ru: "Сад разбит в регулярном стиле: в центре — круглый «Сад Земли и Матери», а от него лучами расходятся 8 ландшафтных участков и тематических садов-боскетов."
+            en: "The garden has a formal, regular layout: at its centre is the circular Garden of Earth and Mother, with eight landscape sections and themed bosquets radiating from it."
+            source: "https://www.astanabotsad.kz/o-nas"
+          - ru: "Участки разделяют хвойные аллеи из ели сибирской, ели колючей и сосны обыкновенной. Всего в саду высажено 89 648 деревьев и кустарников 606 таксонов."
+            en: "The sections are divided by conifer avenues of Siberian spruce, Colorado blue spruce and Scots pine. In all, 89,648 trees and shrubs of 606 taxa have been planted."
+            source: "https://www.astanabotsad.kz/o-nas"
+          - ru: "Сад делится на две почти равные части: научная зона занимает 46,3 гектара, парковая — 42,9 гектара."
+            en: "The garden is split into two almost equal parts: the scientific zone covers 46.3 hectares and the park zone 42.9 hectares."
+            source: "https://www.astanabotsad.kz/o-nas"
+        tip: {ru: "Сориентируйтесь по сторонам света: в северной части сада, у улицы Орынбор, — экспозиции «Северный Казахстан» и «Восточный Казахстан», в южной, у улицы Бухар-Жырау, — «Южный» и «Западный Казахстан».", en: "Get your bearings: the northern part of the garden, by Orynbor Street, holds the Northern and Eastern Kazakhstan displays; the southern part, by Bukhar Zhyrau Street, has Southern and Western Kazakhstan."}
+      - id: taikazan
+        name: {ru: "Фонтан с чашей «Тайказан»", kk: "«Тайқазан» субұрқағы", en: "Fountain with the Taikazan bowl"}
+        lat: 51.10698
+        lon: 71.41129
+        coord_source: "https://2gis.kz/astana/geo/70030076165997840"
+        radius_m: 70
+        outdoor: true
+        facts:
+          - ru: "Фонтан подарила столице Восточно-Казахстанская область. На открытии в 2018 году его представили как самый большой фонтан Астаны, а в центре композиции поставили чашу «Тайказан»."
+            en: "The fountain was a gift to the capital from East Kazakhstan Region. At its opening in 2018 it was presented as the largest fountain in Astana, with the Taikazan bowl at the centre of the composition."
+            source: "https://tengrinews.kz/kazakhstan_news/samyi-bolsoi-fontan-otkryli-v-astane-348012/"
+          - ru: "Медную чашу «Тайказан» сделали вручную в Шымкенте: высота — 6,5 м, диаметр — 7,9 м. Туманообразователь создаёт видимость, будто в котле кипит вода."
+            en: "The copper Taikazan bowl was handmade in Shymkent: 6.5 m high and 7.9 m across. A fog generator makes it look as if water is boiling in the cauldron."
+            source: "https://tengrinews.kz/kazakhstan_news/samyi-bolsoi-fontan-otkryli-v-astane-348012/"
+          - ru: "Рекомендуемая высота струй фонтана — 12 метров, но в рабочем режиме они бьют до 3 метров: в Астане сильные ветра, и так безопаснее для отдыхающих."
+            en: "The fountain's recommended jet height is 12 metres, but in normal operation the jets rise only up to 3 metres: Astana is windy, and this keeps visitors safe."
+            source: "https://tengrinews.kz/kazakhstan_news/samyi-bolsoi-fontan-otkryli-v-astane-348012/"
+        tip: {ru: "Внешнее кольцо диаметром 73 метра — «сухой» фонтан пешеходного типа: вода падает на площадку и уходит через решётку в подземный резервуар. Приходите вечером, когда включают подсветку.", en: "The outer ring, 73 metres across, is a walk-through 'dry' fountain: water falls onto the paving and drains through a grate into an underground tank. Come in the evening, when the lights are on."}
+
+  - id: nurzhol
+    title: {ru: "Нуржол: от Акорды до Хан Шатыра", kk: "Нұржол: Ақордадан Хан Шатырға дейін", en: "Nurzhol: from Akorda to Khan Shatyr"}
+    subtitle: {ru: "Пешком вдоль оси левого берега", kk: "Сол жағалау осі бойымен жаяу серуен", en: "A walk along the left-bank axis"}
+    duration_min: 60
+    distance_km: 2.5
+    outdoor: true
+    hours: {ru: "Смотровая площадка «Байтерека»: ежедневно 09:00–21:00, перерывы 13:00–13:30 и 18:00–18:30. Билет: взрослый 2500 ₸, детский (6–15 лет) 1250 ₸, для пенсионеров 2000 ₸.", en: "Baiterek observation deck: daily 09:00–21:00, breaks 13:00–13:30 and 18:00–18:30. Tickets: adults 2,500 KZT, children (6–15) 1,250 KZT, pensioners 2,000 KZT.", source: "https://sxodim.com/astana/place/monument-bayterek-otkrylsya-dlya-posetiteley"}
+    stops:
+      - id: singing_fountains
+        name: {ru: "Аллея поющих фонтанов", kk: "Ән салатын фонтандар аллеясы", en: "Alley of Singing Fountains"}
+        lat: 51.12738
+        lon: 71.43635
+        coord_source: "https://2gis.kz/astana/geo/9570836402929688"
+        radius_m: 100
+        outdoor: true
+        facts:
+          - ru: "Две золотые башни-конуса на востоке — часть Дома министерств. Вместе они образуют символические ворота на пути к резиденции президента Акорда."
+            en: "The two golden cone-shaped towers to the east are part of the House of Ministries. Together they form a symbolic gateway on the way to the Akorda presidential residence."
+            source: "https://realty.rbc.ru/amp/news/5c910d4a9a794745567e08b5"
+          - ru: "Акорду строили три года, с 2001 по 2004-й, и облицевали белым итальянским мрамором толщиной от 20 до 40 сантиметров."
+            en: "Akorda took three years to build, from 2001 to 2004, and was faced with white Italian marble 20 to 40 centimetres thick."
+            source: "https://forbes.kz/articles/belaya_stavka"
+          - ru: "В 2020 году музыкальному фонтану на Нуржоле обновили репертуар: зазвучали песни Димаша Кудайбергена, Батырхана Шукенова и «Көзімнің қарасы» Абая."
+            en: "In 2020 the musical fountain on Nurzhol got a new repertoire: songs by Dimash Kudaibergen, Batyrkhan Shukenov and Abai's 'Kozimnin karasy'."
+            source: "https://www.inform.kz/ru/fontany-zapustili-v-nur-sultane_a3783715"
+        tip: {ru: "Встаньте лицом на восток: бульвар замыкают золотые башни и длинное ступенчатое здание Дома министерств, а за ними, ближе к реке, — Акорда. Резиденцию смотрят только снаружи. Фонтанные шоу бывают летними вечерами, но без чёткого графика.", en: "Face east: the boulevard ends at the golden towers and the long, stepped House of Ministries, and beyond them, closer to the river, is Akorda. The residence can only be seen from outside. Fountain shows happen on summer evenings, but with no fixed schedule."}
+      - id: baiterek
+        name: {ru: "Монумент «Байтерек»", kk: "«Бәйтерек» монументі", en: "Baiterek Monument"}
+        lat: 51.12833
+        lon: 71.43056
+        coord_source: "https://en.wikipedia.org/wiki/Baiterek_(monument)"
+        radius_m: 80
+        outdoor: true
+        facts:
+          - ru: "Высота монумента — 97 метров, и она символична: это 1997 год, когда столицу перенесли из Алматы в Астану."
+            en: "The monument is 97 metres tall, and the figure is symbolic: it stands for 1997, the year the capital moved from Almaty to Astana."
+            source: "https://www.zakon.kz/redaktsiia-zakonkz/4683094-stolichnyjj-monument-bajjterek-priobrel.html"
+          - ru: "По легенде, Байтерек — древо жизни, которое связывает три мира. На его вершине свила гнездо гигантская птица Самрук, а стеклянный шар — это её яйцо."
+            en: "Legend has it that Baiterek is the tree of life that links three worlds. The giant bird Samruk made her nest at its top, and the glass sphere is her egg."
+            source: "https://www.inform.kz/ru/kak-legenda-o-mificheskom-dereve-velikane-voplotilas-v-astane_a3281270"
+          - ru: "Шар диаметром 22 метра весит около 300 тонн. Его стекло «хамелеон» меняет вид под солнцем. Все материалы монумента казахстанские, кроме стекла — его привезли из Италии."
+            en: "The 22-metre sphere weighs about 300 tonnes. Its 'chameleon' glass changes with the sunlight. All the monument's materials are Kazakhstani except the glass, which came from Italy."
+            source: "https://www.inform.kz/ru/kak-legenda-o-mificheskom-dereve-velikane-voplotilas-v-astane_a3281270"
+        tip: {ru: "Можно подняться в шар: касса в подземном холле, наверх везёт скоростной лифт, со смотровой площадки видно весь город. Наверху найдите композицию «Бата» — глобус с подписями лидеров 17 мировых религиозных конфессий. Кстати, в народе монумент зовут «Чупа-чупсом».", en: "You can go up into the sphere: tickets are sold in the underground hall, a high-speed lift takes you up, and the observation deck overlooks the whole city. Up there, look for the 'Bata' composition, a globe signed by leaders of 17 world religious confessions. By the way, locals nickname the monument 'Chupa Chups'."}
+      - id: nurzhol_boulevard
+        name: {ru: "Бульвар Нуржол", kk: "Нұржол бульвары", en: "Nurzhol Boulevard"}
+        lat: 51.12893
+        lon: 71.42660
+        coord_source: "https://2gis.kz/astana/geo/9570836402929671"
+        radius_m: 100
+        outdoor: true
+        facts:
+          - ru: "У бульвара три уровня: между ними устроены световые колодцы, лестницы и зимние сады, а верхний уровень — зелёная зона с аллеями, клумбами и газонами."
+            en: "The boulevard has three levels, linked by light wells, stairways and winter gardens; the top level is a green zone of alleys, flower beds and lawns."
+            source: "https://www.nur.kz/leisure/tourist-routes/1545822-kuda-skhodit-v-astane-vecherom/"
+          - ru: "Впереди справа — «Изумрудный квартал»: башни в 37 и 49 этажей, высота комплекса — 201 метр."
+            en: "Ahead on the right is the Emerald Quarter: towers of 37 and 49 floors, with the complex reaching 201 metres."
+            source: "https://tengrinews.kz/my-country/samyie-bolshie-mire-veloshlem-zdanie-sfera-22-404031/"
+          - ru: "Впереди слева — три «волнистых» дома из зелёного стекла, комплекс «Северное сияние»: их переливающиеся формы должны напоминать полярное сияние."
+            en: "Ahead on the left stand three 'wavy' green-glass apartment towers, the Northern Lights complex: their shimmering forms are meant to evoke the aurora borealis."
+            source: "https://bradtguides.com/?p=7664"
+        tip: {ru: "Идите по верхнему, зелёному уровню и поищите световые колодцы — через них видно нижние уровни бульвара. Обернитесь на восток: Байтерек стоит ровно на оси бульвара.", en: "Walk along the upper, green level and look for the light wells: through them you can see the boulevard's lower levels. Turn around to the east: Baiterek stands right on the boulevard's axis."}
+      - id: round_square
+        name: {ru: "Круглая площадь и арка «КазМунайГаза»", kk: "Дөңгелек алаң және «ҚазМұнайГаз» аркасы", en: "Round Square and the KazMunayGas Arch"}
+        lat: 51.13083
+        lon: 71.41444
+        coord_source: "https://en.wikipedia.org/wiki/D%C3%B6%C3%B1gelek_Square"
+        radius_m: 100
+        outdoor: true
+        facts:
+          - ru: "Огромная арка над пешеходной эспланадой соединяет два 18-этажных зеркальных здания «КазМунайГаза». Её называют входными воротами на бульвар, который тянется до Акорды."
+            en: "A huge arch over the pedestrian esplanade links two 18-storey mirrored buildings of KazMunayGas. It is called the entrance gate to the boulevard that runs all the way to Akorda."
+            source: "https://www.inform.kz/ru/ao-nk-kazmunaygaz-odno-iz-pervyh-zdaniy-na-levoberezh-e-astany_a3276269"
+          - ru: "Штаб-квартиру «КазМунайГаза» достроили в 2002 году — это одно из первых зданий на левом берегу Астаны. Проект сделала группа архитекторов компании «Базис-А»."
+            en: "The KazMunayGas headquarters was completed in 2002, one of the first buildings on Astana's left bank. It was designed by a team of architects from the firm Bazis-A."
+            source: "https://www.inform.kz/ru/ao-nk-kazmunaygaz-odno-iz-pervyh-zdaniy-na-levoberezh-e-astany_a3276269"
+          - ru: "Круглая площадь появилась в 2003 году и устроена в два яруса: нижний — для пешеходов, верхний — для машин."
+            en: "Round Square was created in 2003 and is built on two tiers: the lower one for pedestrians, the upper one for cars."
+            source: "https://en.wikipedia.org/wiki/D%C3%B6%C3%B1gelek_Square"
+        tip: {ru: "Пройдите под аркой и спуститесь на нижний, пешеходный ярус площади: там фонтаны, магазины и кафе.", en: "Walk under the arch and go down to the square's lower, pedestrian tier, with its fountains, shops and cafés."}
+      - id: khan_shatyr
+        name: {ru: "Хан Шатыр", kk: "Хан Шатыр", en: "Khan Shatyr"}
+        lat: 51.13222
+        lon: 71.40389
+        coord_source: "https://en.wikipedia.org/wiki/Khan_Shatyr_Entertainment_Center"
+        radius_m: 150
+        outdoor: false
+        facts:
+          - ru: "Высота шатра вместе со шпилем — 150 метров. Его спроектировал британский архитектор Норман Фостер."
+            en: "Including the spire, the tent is 150 metres tall. It was designed by British architect Norman Foster."
+            source: "https://tengrinews.kz/my-country/samyie-bolshie-mire-veloshlem-zdanie-sfera-22-404031/"
+          - ru: "Название сложено из двух казахских слов: «хан» — титул правителя у тюркских народов, «шатыр» — средневековое жилище. Астанчане зовут его просто «Шатёр» или «Ханшык»."
+            en: "The name joins two Kazakh words: 'khan', a ruler's title among Turkic peoples, and 'shatyr', a medieval dwelling. Locals simply call it 'Shatyor' (the Tent) or 'Khanshyk'."
+            source: "https://informburo.kz/stati/piramida-xan-satyr-i-centralnaia-mecet-rasskazyvaem-o-glavnyx-simvolax-stolicy"
+          - ru: "Шпиль шатра стоит не на одном столбе: одного оказалось мало, и строители возвели треногу. А песок для пляжа под куполом, по словам администрации, везут с Мальдив."
+            en: "The spire does not stand on a single pole: one was not enough, so the builders put up a tripod. And the sand for the beach under the dome, the management says, is brought from the Maldives."
+            source: "https://www.inform.kz/ru/kak-velos-stroitel-stvo-han-shatyra_a3269272"
+        tip: {ru: "Внутрь можно зайти: ТРЦ открыт ежедневно с 10:00 до 22:00, в пятницу и субботу — до 23:00. Под самым куполом — пляжный клуб Sky Beach Club. Внутри посмотрите вверх: прозрачная крыша держится на стальных тросах, натянутых от центрального шпиля.", en: "You can go inside: the mall is open daily 10:00–22:00, until 23:00 on Fridays and Saturdays. Right under the dome is the Sky Beach Club. Inside, look up: the transparent roof hangs on steel cables strung from the central spire."}
+
+  - id: independence
+    title: {ru: "Площадь Независимости", kk: "Тәуелсіздік алаңы", en: "Independence Square"}
+    subtitle: {ru: "Пирамида, мечеть и стела в 91 метр", kk: "Пирамида, мешіт және 91 метрлік стела", en: "Pyramid, mosque and a 91-metre stela"}
+    duration_min: 60
+    distance_km: 2.0
+    outdoor: true
+    hours:
+      ru: "Национальный музей: вт–вс 10:00–18:00, касса до 17:00; понедельник — выходной, последний вторник месяца — санитарный день."
+      en: "National Museum: Tue–Sun 10:00–18:00, ticket office until 17:00; closed on Mondays and on the last Tuesday of each month (sanitary day)."
+      source: "https://nmrk.kz/about-museum/contacts/"
+    stops:
+      - id: palace_of_peace
+        name: {ru: "Дворец мира и согласия", kk: "Бейбітшілік және келісім сарайы", en: "Palace of Peace and Reconciliation"}
+        lat: 51.12311
+        lon: 71.46346
+        coord_source: "https://mapcarta.com/N5130027840"
+        radius_m: 100
+        outdoor: true
+        facts:
+          - ru: "Пирамиду спроектировал британский архитектор Норман Фостер. Основание у неё 62 на 62 метра, и высота тоже 62 метра."
+            en: "The pyramid was designed by British architect Norman Foster. Its base measures 62 by 62 metres, and it is 62 metres tall as well."
+            source: "https://astana-piramida.kz/%d0%b4%d0%b2%d0%be%d1%80%d0%b5%d1%86-%d0%bc%d0%b8%d1%80%d0%b0-%d0%b8-%d1%81%d0%be%d0%b3%d0%bb%d0%b0%d1%81%d0%b8%d1%8f/"
+          - ru: "На витражах британский художник Брайан Кларк изобразил 130 голубей — по числу национальностей Казахстана. Снаружи их не видно: голуби нанесены на сетку между двумя стёклами."
+            en: "British artist Brian Clarke put 130 doves into the stained glass, one for each nationality living in Kazakhstan. You can't see them from outside: the doves are printed on a mesh between two panes of glass."
+            source: "https://www.inform.kz/ru/10-interesnyh-faktov-o-dvorce-mira-i-soglasiya_a3269243"
+          - ru: "Лифты здесь ходят наискосок — по диагонали под углом 60 градусов. Прямо движется только один, к малому конференц-залу на восьмом этаже."
+            en: "The lifts here travel diagonally, at a 60-degree angle. Only one goes straight up, to the small conference hall on the eighth floor."
+            source: "https://www.inform.kz/ru/10-interesnyh-faktov-o-dvorce-mira-i-soglasiya_a3269243"
+        tip:
+          ru: "Внутрь пускают на экскурсию по билету, дворец работает без выходных, и только изнутри видно голубей. Снаружи повернитесь к проспекту: прямо напротив, через дорогу, — площадь Независимости со стелой «Қазақ елі»."
+          en: "You can go inside on a ticketed guided tour; the palace is open seven days a week, and the doves can only be seen from inside. Outside, turn towards the avenue: Independence Square and the Kazakh Eli stela are directly opposite, across the road."
+      - id: hazret_sultan
+        name: {ru: "Мечеть «Хазрет Султан»", kk: "Әзірет Сұлтан мешіті", en: "Hazret Sultan Mosque"}
+        lat: 51.12543
+        lon: 71.47219
+        coord_source: "https://mapcarta.com/W240860325"
+        radius_m: 100
+        outdoor: true
+        facts:
+          - ru: "Мечеть не случайно назвали в честь Ходжи Ахмеда Ясави: «Хазрет Султан» — так называется и его мавзолей в Туркестане."
+            en: "The mosque was named after Khoja Ahmed Yasawi on purpose: Hazret Sultan is also the name of his mausoleum in Turkistan."
+            source: "https://www.inform.kz/ru/v-novoy-mecheti-hazret-sultan-mogut-sovershat-namaz-10-tys-chelovek-n-nazarbaev_a2477770"
+          - ru: "Четыре минарета — по 77 метров каждый. Купол над большим молитвенным залом поднимается на 51 метр, а его диаметр — 28 метров."
+            en: "Each of the four minarets is 77 metres tall. The dome over the main prayer hall rises to 51 metres and is 28 metres across."
+            source: "https://www.inform.kz/ru/turisty-edut-v-astanu-chtoby-posetit-mechet-hazret-sultan_a3270464"
+          - ru: "Мечеть открыли 6 июля 2012 года, спроектировали её Сагындык Джамбулатов и Есенгали Ахметов. Внутри висит люстра из чистого хрусталя на медной основе весом 3 тонны."
+            en: "The mosque opened on 6 July 2012; it was designed by Sagyndyk Dzhambulatov and Yesengali Akhmetov. Inside hangs a pure crystal chandelier on a copper frame that weighs 3 tonnes."
+            source: "https://www.inform.kz/ru/turisty-edut-v-astanu-chtoby-posetit-mechet-hazret-sultan_a3270464"
+        tip:
+          ru: "Вход бесплатный. Колени и плечи должны быть закрыты, женщинам нужен платок, а если одежда открытая, выдадут длинную накидку. Чтобы все четыре минарета попали в кадр, отойдите подальше от входа."
+          en: "Entry is free. Knees and shoulders must be covered and women need a headscarf; if your clothes are too revealing, you'll be given a long robe. To fit all four minarets into one shot, step well back from the entrance."
+      - id: kazakh_eli
+        name: {ru: "Монумент «Қазақ елі»", kk: "«Қазақ елі» монументі", en: "Kazakh Eli Monument"}
+        lat: 51.12194
+        lon: 71.47000
+        coord_source: "https://en.wikipedia.org/wiki/Independence_Square,_Astana"
+        radius_m: 60
+        outdoor: true
+        facts:
+          - ru: "Стелу открыли в 2009 году. Её высота — 91 метр, и это не случайно: число указывает на 1991-й, год, когда Казахстан обрёл независимость."
+            en: "The stela was unveiled in 2009. It is 91 metres tall, and that's no accident: the number points to 1991, the year Kazakhstan became independent."
+            source: "https://informburo.kz/stati/piramida-xan-satyr-i-centralnaia-mecet-rasskazyvaem-o-glavnyx-simvolax-stolicy"
+          - ru: "На вершине стелы сидит мифическая птица Самрук. По задумке, она символически охраняет покой государства."
+            en: "The mythical bird Samruk sits on top of the stela. The idea is that it symbolically guards the country's peace."
+            source: "https://informburo.kz/stati/piramida-xan-satyr-i-centralnaia-mecet-rasskazyvaem-o-glavnyx-simvolax-stolicy"
+          - ru: "Вокруг стелы стоит колоннада из 28 колонн общей длиной 120 метров."
+            en: "The stela is surrounded by a colonnade of 28 columns, 120 metres long in total."
+            source: "https://informburo.kz/stati/piramida-xan-satyr-i-centralnaia-mecet-rasskazyvaem-o-glavnyx-simvolax-stolicy"
+        tip:
+          ru: "Найдите у основания стелы четыре бронзовых барельефа — среди них «Мужество», «Созидание» и «Будущее». Оглянитесь: с площади видны Дворец Независимости, круглый «Шабыт» (университет искусств), мечеть и Пирамида."
+          en: "Look for the four bronze reliefs at the foot of the stela, among them Courage, Creation and The Future. Then look around: from the square you can see the Palace of Independence, the round Shabyt building (the arts university), the mosque and the Pyramid."
+      - id: peace_wall
+        name: {ru: "Стена мира", kk: "Бейбітшілік қабырғасы", en: "Peace Wall"}
+        lat: 51.12186
+        lon: 71.47171
+        coord_source: "https://sxodim.com/astana/place/stena-mira"
+        radius_m: 60
+        outdoor: true
+        facts:
+          - ru: "Стену открыли 29 августа 2018 года — в Международный день против ядерных испытаний. Это подарок Актюбинской области к 20-летию столицы."
+            en: "The wall was unveiled on 29 August 2018, the International Day against Nuclear Tests. It was a gift from Aktobe Region for the capital's 20th anniversary."
+            source: "https://informburo.kz/novosti/nursultan-nazarbaev-otkryl-monument-stena-mira-v-astane.html"
+          - ru: "Длина стены — 111 метров, высота — 17,5. Слово «мир» на ней написано на 51 языке."
+            en: "The wall is 111 metres long and 17.5 metres high. The word \"peace\" is written on it in 51 languages."
+            source: "https://informburo.kz/novosti/nursultan-nazarbaev-otkryl-monument-stena-mira-v-astane.html"
+          - ru: "На стену ушло около 1200 тонн гранита, а в прозрачную кровлю-«лепесток» встроен светодиодный экран площадью около 616 м² — примерно 2,5 млн светодиодов."
+            en: "About 1,200 tonnes of granite went into the wall, and the transparent petal-shaped roof hides an LED screen of about 616 m², roughly 2.5 million LEDs."
+            source: "https://informburo.kz/novosti/nursultan-nazarbaev-otkryl-monument-stena-mira-v-astane.html"
+        tip:
+          ru: "Пройдите вдоль всей стены: три её части означают разобщённость, затем надежду и независимость и, наконец, путь к миру и согласию. Попробуйте найти слово «мир» на знакомых вам языках."
+          en: "Walk the full length of the wall: its three parts stand for disunity, then hope and independence, and finally the path to peace and harmony. Try to spot the word \"peace\" in languages you know."
+      - id: palace_of_independence
+        name: {ru: "Дворец Независимости", kk: "Тәуелсіздік сарайы", en: "Palace of Independence"}
+        lat: 51.12063
+        lon: 71.47205
+        coord_source: "https://mapcarta.com/W240873345"
+        radius_m: 75
+        outdoor: true
+        facts:
+          - ru: "Решётка на фасаде — это кереге, деревянный решётчатый каркас юрты. Так дворцу придали национальный характер."
+            en: "The lattice on the facade is a kerege, the wooden lattice frame of a yurt. It is what gives the palace its national character."
+            source: "http://indepalace.kz/en/page/about"
+          - ru: "Обратите внимание на цвет: синий в тюркской символике означает вечность — как само небо."
+            en: "Notice the colour: in Turkic symbolism, blue stands for eternity, like the sky itself."
+            source: "https://informburo.kz/stati/piramida-xan-satyr-i-centralnaia-mecet-rasskazyvaem-o-glavnyx-simvolax-stolicy"
+          - ru: "Дворец открыли 15 декабря 2008 года, а в 2010-м здесь прошёл саммит ОБСЕ: 38 глав государств и 78 официальных делегаций."
+            en: "The palace opened on 15 December 2008, and in 2010 it hosted the OSCE Summit: 38 heads of state and 78 official delegations."
+            source: "http://indepalace.kz/en/page/about"
+        tip:
+          ru: "Подойдите ближе к фасаду и рассмотрите, как решётка-кереге ложится на синее стекло. Внутри, на третьем этаже, есть зал с макетом генплана столицы; можно ли туда попасть, лучше уточнить заранее."
+          en: "Walk up to the facade and see how the kerege lattice sits over the blue glass. Inside, on the third floor, there is a hall with a model of the capital's master plan; check in advance whether it is open to visitors."
+      - id: national_museum
+        name: {ru: "Национальный музей Республики Казахстан", kk: "Қазақстан Республикасының Ұлттық музейі", en: "National Museum of the Republic of Kazakhstan"}
+        lat: 51.11823
+        lon: 71.46938
+        coord_source: "https://mapcarta.com/N4894937300"
+        radius_m: 80
+        outdoor: false
+        facts:
+          - ru: "Музей открыли 2 июля 2014 года. Комплекс площадью 74 тысячи м² состоит из семи блоков высотой до девяти этажей."
+            en: "The museum opened on 2 July 2014. The 74,000 m² complex is made up of seven blocks up to nine storeys high."
+            source: "https://www.inform.kz/ru/v-nacional-nom-muzee-predstavlena-vsya-istoriya-kazahstana_a3270424"
+          - ru: "Главный экспонат Золотого зала — реконструкция «Золотого человека», найденного в 1960-х у Есика. В том кургане нашли больше 4 тысяч золотых изделий."
+            en: "The centrepiece of the Gold Hall is a reconstruction of the Golden Man, found in the 1960s near Yesik. More than 4,000 gold items were found in that burial mound."
+            source: "https://www.inform.kz/ru/v-nacional-nom-muzee-predstavlena-vsya-istoriya-kazahstana_a3270424"
+          - ru: "Один из авторов, архитектор Владимир Лаптев, описывает здание как «осколки каменных глыб» с орнаментом и хай-тек наверху. В 2025 году проект взял Гран-при фестиваля архитектуры «Астана-2025»."
+            en: "One of its architects, Vladimir Laptev, describes the building as \"shards of stone blocks\" with ornament, topped by high-tech. In 2025 the project won the Grand Prix at the Astana-2025 architecture festival."
+            source: "https://kazpravda.kz/n/zolotaya-medal-masteram-astany/"
+        tip:
+          ru: "Внутрь — по билету, со вторника по воскресенье, касса до 17:00. Сам музей называет себя крупнейшим в Центральной Азии, так что на залы лучше выделить отдельные час-два; начните с Золотого зала."
+          en: "Entry is by ticket, Tuesday to Sunday, ticket office until 17:00. The museum calls itself the largest in Central Asia, so set aside a separate hour or two for the halls; start with the Gold Hall."
+
+  - id: expo
+    title: {ru: "EXPO и Нур Алем", kk: "EXPO және Нұр Әлем", en: "EXPO and Nur Alem"}
+    subtitle: {ru: "Шар, павильоны и жизнь после выставки", kk: "Шар, павильондар, көрмеден кейінгі өмір", en: "Sphere, pavilions, life after the Expo"}
+    duration_min: 50
+    distance_km: 1.3
+    outdoor: true
+    hours:
+      ru: "Музей Сингулярности в шаре (alem.ai): вт–вс 10:00–18:30, пн — технический день. Входной билет 2 500 ₸; экскурсия с гидом для группы до 30 человек — 10 000 ₸, входные билеты отдельно. Дети до 7 лет — бесплатно, пенсионерам бесплатно по вторникам."
+      en: "Singularity Museum inside the sphere (alem.ai): Tue–Sun 10:00–18:30, Monday is a maintenance day. Entry 2,500 KZT; guided tour for a group of up to 30 people 10,000 KZT, entry tickets sold separately. Free for children under 7; free for pensioners on Tuesdays."
+      source: "https://alem.ai"
+    stops:
+      - id: aitu
+        name: {ru: "Astana IT University", kk: "Astana IT University", en: "Astana IT University"}
+        lat: 51.09065
+        lon: 71.41804
+        coord_source: "https://2gis.kz/astana/firm/70000001036709805"
+        radius_m: 80
+        outdoor: true
+        facts:
+          - ru: "Летом 2017 года здесь шла выставка ЭКСПО «Энергия будущего» — первое ЭКСПО в Центральной Азии. В ней участвовали 115 стран и 22 международные организации."
+            en: "In summer 2017 this was the site of Expo 2017 \"Future Energy\", the first Expo ever held in Central Asia. 115 countries and 22 international organisations took part."
+            source: "https://www.bie-paris.org/site/en/2017-astana"
+          - ru: "Всего выставку посетили 3 977 545 человек, хотя по первоначальному прогнозу ждали 2 миллиона."
+            en: "In total 3,977,545 people visited the Expo, against an initial forecast of 2 million."
+            source: "https://informburo.kz/novosti/sfera-nur-alem-v-astane-otnyne-podlezhit-gosudarstvennoy-ohrane-.html"
+          - ru: "Astana IT University основали в 2019 году, и за пять лет студентов стало в 10 раз больше: было 600, стало 6 000."
+            en: "Astana IT University was founded in 2019, and within five years its student body grew tenfold, from 600 to 6,000."
+            source: "https://kapital.kz/gosudarstvo/126287/astana-it-university-pyat-let-innovatsiy-i-uspekhov.html"
+        tip:
+          ru: "Университет занял один из бывших международных павильонов ЭКСПО. Найдите взглядом шар «Нур Алем»: до него около 200 метров на юго-запад, это следующая точка."
+          en: "The university moved into one of the former international Expo pavilions. Look for the Nur Alem sphere: it is about 200 metres to the southwest, and that is the next stop."
+      - id: nur_alem
+        name: {ru: "Шар «Нур Алем» (alem.ai)", kk: "«Нұр Әлем» шары (alem.ai)", en: "Nur Alem sphere (alem.ai)"}
+        lat: 51.08924
+        lon: 71.41625
+        coord_source: "https://sxodim.com/astana/place/muzey-nur-alem-vozobnovlyaet-svoyu-rabotu"
+        radius_m: 90
+        outdoor: true
+        facts:
+          - ru: "Диаметр шара — 80 метров, на его остекление ушло 3 535 стеклопакетов. Во время ЭКСПО это был самый посещаемый павильон."
+            en: "The sphere is 80 metres across, and its glazing took 3,535 double-glazed units. During the Expo it was the most visited pavilion."
+            source: "https://www.bie-paris.org/site/en/2017-astana"
+          - ru: "Вместе с основанием здание поднимается на 100 метров. Наверху, в «ковше», стоят две ветротурбины диаметром по 6 метров, а в стекло там встроены солнечные модули."
+            en: "Including its base, the building is 100 metres tall. At the top, in the so-called scoop, sit two wind turbines 6 metres in diameter, and the glass there has built-in solar modules."
+            source: "https://www.lindner-group.com/en/references/the-sphere-expo-2017"
+          - ru: "Шар строили как музей энергии будущего, а теперь все восемь этажей отданы центру ИИ alem.ai: тут центр технологий для подростков, ИИ-школа, кампус стартапов и лаборатории."
+            en: "The sphere was built as a museum of future energy; now all eight floors belong to the alem.ai AI centre, with a tech centre for teenagers, an AI school, a startup campus and research labs."
+            source: "https://tengrinews.kz/kazakhstan_news/pavilon-Nur-Alem-stal-tsentrom-AlemAI-chto-izmenilos-598044/"
+        tip:
+          ru: "Отойдите подальше, чтобы шар целиком влез в кадр, и найдите на самом верху «ковш» с турбинами. Внутри работает Музей Сингулярности: вт–вс 10:00–18:30, билет 2 500 ₸."
+          en: "Step back far enough to fit the whole sphere in the frame, and spot the turbine scoop at the very top. Inside is the Singularity Museum: Tue–Sun 10:00–18:30, ticket 2,500 KZT."
+      - id: aifc
+        name: {ru: "Международный финансовый центр «Астана»", kk: "«Астана» халықаралық қаржы орталығы", en: "Astana International Financial Centre"}
+        lat: 51.08743
+        lon: 71.41681
+        coord_source: "https://2gis.kz/astana/firm/70000001030564386"
+        radius_m: 80
+        outdoor: true
+        facts:
+          - ru: "МФЦА официально запустили 5 июля 2018 года, и открытие специально приурочили ко Дню столицы."
+            en: "The AIFC was officially launched on 5 July 2018, timed to coincide with Astana Day, the capital's holiday."
+            source: "https://inbusiness.kz/kz/news/ahko-saltanatty-turde-iske-kosyldy"
+          - ru: "В МФЦА в основном работает право английского образца, а первым председателем суда центра стал британский лорд Гарри Вульф."
+            en: "The AIFC mostly runs on English-style law, and the first chief justice of its court was the British judge Lord Harry Woolf."
+            source: "https://informburo.kz/stati/kak-budet-rabotat-sud-mfc-astana-i-chem-izvestny-10-britancev-vhodyashchih-v-ego-sostav.html"
+          - ru: "Центру отдали бывшие павильоны C3 и C4: по плану в C3 — администрация, суд и биржа, а в C4 — банки и учебные заведения."
+            en: "The centre was given former pavilions C3 and C4: under the plan, C3 was to house the administration, court and exchange, and C4 banks and educational institutions."
+            source: "https://forbes.kz/news/newsid_170519"
+        tip:
+          ru: "В соседнем блоке работает биржа Astana International Exchange (AIX). Шар отсюда примерно в 200 метрах к северу — хороший фон для кадра с павильонами."
+          en: "The neighbouring block houses the Astana International Exchange (AIX). The sphere is about 200 metres to the north, a good backdrop for a shot of the pavilions."
+      - id: astana_hub
+        name: {ru: "Технопарк Astana Hub", kk: "Astana Hub технопаркі", en: "Astana Hub tech park"}
+        lat: 51.08834
+        lon: 71.41424
+        coord_source: "https://2gis.kz/astana/firm/70000001032622616"
+        radius_m: 70
+        outdoor: true
+        facts:
+          - ru: "Astana Hub занял павильон C4.6, где во время ЭКСПО был корпоративный павильон. По проекту реконструкции площадь павильона почти удвоили: с 5 000 до 9 600 м²."
+            en: "Astana Hub took over pavilion C4.6, which held a corporate pavilion during the Expo. The reconstruction plan nearly doubled its area, from 5,000 to 9,600 m²."
+            source: "https://forbes.kz/news/newsid_170519"
+          - ru: "Сейчас у Astana Hub больше 2 500 компаний-участников, а их экспортная выручка — 2 млрд долларов."
+            en: "Today Astana Hub has more than 2,500 participant companies, and their export revenue stands at $2 billion."
+            source: "https://astanahub.com/ru"
+          - ru: "Именно в Astana Hub запустили Tomorrow School — бесплатную школу ИИ без преподавателей, где студенты учат друг друга."
+            en: "Astana Hub is where Tomorrow School was launched: a free AI school with no teachers, where students teach each other."
+            source: "https://www.inform.kz/ru/territoriyu-ekspo-vastane-preobrazuyut-chto-poyavitsya-vgorodke-iskusstvennogo-intellekta-52c820"
+        tip:
+          ru: "Отсюда до MEGA Silk Way около 500 метров на запад — там финальная тёплая точка, можно погреться и перекусить."
+          en: "MEGA Silk Way is about 500 metres to the west: the final warm stop, where you can warm up and grab a bite."
+      - id: mega_silk_way
+        name: {ru: "ТРЦ MEGA Silk Way", kk: "MEGA Silk Way сауда-ойын сауық орталығы", en: "MEGA Silk Way mall"}
+        lat: 51.08909
+        lon: 71.40733
+        coord_source: "https://mapcarta.com/W499328514"
+        radius_m: 150
+        outdoor: false
+        facts:
+          - ru: "Торговый центр спроектировало бюро Chapman Taylor в рамках мастер-плана ЭКСПО-2017 — как символ выставки, который останется и после неё."
+            en: "The mall was designed by Chapman Taylor within the Expo 2017 masterplan, as a symbol of the Expo that would remain after it closed."
+            source: "https://www.chapmantaylor.com/news/retail-leisure-exciting-kazakhstan-project-is-part-of-expo-2017-masterplan"
+          - ru: "ТРЦ открылся в марте 2017 года. Здание тянется на 500 метров, а атриумы высотой 27 метров — как девятиэтажный дом."
+            en: "The mall opened in March 2017. The building is 500 metres long, and its atriums are 27 metres high, about as tall as a nine-storey building."
+            source: "https://forbes.kz/articles/mega_silk_way_poluchil_mejdunarodnoe_zvanie_luchshego_arhitekturnogo_obyekta_v_sfere_riteyla"
+          - ru: "В 2019 году здание победило на International Property Awards в номинации Best International Retail Architecture."
+            en: "In 2019 the building won the International Property Awards in the Best International Retail Architecture category."
+            source: "https://forbes.kz/articles/mega_silk_way_poluchil_mejdunarodnoe_zvanie_luchshego_arhitekturnogo_obyekta_v_sfere_riteyla"
+        tip:
+          ru: "Заходите погреться: ТРЦ открыт каждый день с 10:00 до 22:00. В атриуме поднимите голову — вот они, те самые 27 метров."
+          en: "Step inside to warm up: the mall is open daily 10:00–22:00. In the atrium, look up to see those 27 metres for yourself."

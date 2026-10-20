@@ -1,0 +1,43 @@
+# A small guided walk around the fixture city (EXPO area of tests/fixtures/overpass_sample.json).
+# Facts here are test data, not content.
+tours:
+  - id: test_expo
+    title: {ru: "Тестовая прогулка", kk: "Сынақ серуені", en: "Test walk"}
+    subtitle: {ru: "три точки у EXPO", en: "three stops at EXPO"}
+    duration_min: 40
+    distance_km: 0.8
+    outdoor: true
+    hours: {ru: "Территория открыта круглосуточно", en: "Open around the clock", source: "https://example.org/hours"}
+    stops:
+      - id: sphere
+        name: {ru: "Нур Алем", kk: "Нұр Әлем", en: "Nur Alem"}
+        lat: 51.0890
+        lon: 71.4160
+        radius_m: 70
+        outdoor: false
+        facts:
+          - ru: "Тестовый факт про сферу."
+            en: "A test fact about the sphere."
+            source: "https://ru.wikipedia.org/wiki/Test"
+          - ru: "Второй факт без перевода."
+            source: "https://tengrinews.kz/test"
+        tip: {ru: "Посмотрите вверх.", en: "Look up."}
+      - id: art
+        name: {ru: "Арт-объект «Ветер степи»", en: "Steppe Wind art object"}
+        lat: 51.0896
+        lon: 71.4145
+        radius_m: 60
+        facts:
+          - ru: "Факт про арт-объект."
+            en: "A fact about the art object."
+            source: "https://example.org/art"
+      - id: square
+        name: {ru: "Сквер у EXPO", en: "EXPO square"}
+        lat: 51.0880
+        lon: 71.4190
+        radius_m: 80
+        facts:
+          - ru: "Факт про сквер."
+            en: "A fact about the square."
+            source: "https://example.org/square"
+        tip: {ru: "Сделайте фото сферы отсюда.", en: "Take a photo of the sphere from here."}

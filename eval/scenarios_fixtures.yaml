@@ -1,0 +1,117 @@
+# Same scenarios on the test fixtures (fixed time and weather), with exact expectations.
+# Used by the test suite; also a reproducible demo: load fixtures, then `eval --file eval/scenarios_fixtures.yaml`.
+scenarios:
+  - id: brief_1_mega_walk
+    text: "Я сейчас возле Mega Silk Way, хочу прогуляться 30–60 минут — что посоветуете?"
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {anchor_contains: "Mega", min_items: 2, any_title_contains: "Сквер", route: true}
+
+  - id: brief_2_quiet_coffee_socket
+    text: "Хочу тихое место с кофе и розеткой недалеко от меня."
+    lat: 51.0900
+    lon: 71.4165
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {min_items: 2, max_items: 2, any_title_contains: "Тихий угол"}
+
+  - id: brief_3_kids
+    text: "Еду с ребёнком — где рядом есть детские площадки или музей с интерактивами?"
+    lat: 51.0900
+    lon: 71.4165
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {first_title_contains: "Нур Алем", any_title_contains: "площадка", first_need_yes: kids,
+             no_subcategories: [bar, pub, nightclub]}
+
+  - id: brief_4_tourist_flight
+    text: "Я - турист, у меня 2 часа перед вылетом: что можно посмотреть поблизости?"
+    lat: 51.1283
+    lon: 71.4305
+    at: "2026-10-23 14:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {note_contains: "свободного времени ~29", first_title_contains: "Байтерек", max_items: 1}
+
+  - id: brief_5_night
+    text: "Ищу необычную ночную активность (последние пару часов)."
+    lat: 51.0900
+    lon: 71.4165
+    at: "2026-10-23 23:30"
+    weather: tests/fixtures/weather_mild.json
+    expect: {first_title_contains: "Луна", any_title_contains: "Полночь", first_need_yes: night}
+
+  - id: brief_example_expo
+    text: "Я у здании Экспо 2017, хочу что-то необычное на 1–2 часа, пешком."
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {anchor_contains: "Нур Алем", first_title_contains: "Нур Алем"}
+
+  - id: evening_exhibition_now
+    text: "Что интересного рядом прямо сейчас?"
+    lat: 51.1186
+    lon: 71.4701
+    at: "2026-10-23 19:10"
+    weather: tests/fixtures/weather_mild.json
+    expect: {first_title_contains: "Национальный музей", first_status_contains: "«Ночь в музее»: идёт сейчас"}
+
+  - id: cold_warm_route
+    text: "Я возле Mega Silk Way, хочу прогуляться час"
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_cold.json
+    expect: {no_outdoor_items: true, first_title_contains: "Mega", note_contains: "снег"}
+
+  - id: kazakh_quiet_coffee
+    text: "Жақын жерде кофе ішетін тыныш орын бар ма?"
+    lat: 51.0900
+    lon: 71.4165
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {lang: kk, needs_include: [coffee, quiet], first_title_contains: "Тихий угол",
+             no_subcategories: [bar, nightclub]}
+
+  - id: group_three_people
+    text: "Мы у Mega Silk Way, есть час"
+    members: ["Айгерим: кофе и тихо", "Данияр: хочу что-то необычное", "Ерлан: недалеко, с Wi-Fi"]
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    expect: {group_fit: true, first_title_contains: "Тихий угол"}
+
+  - id: no_location
+    text: "Хочу кофе"
+    at: "2026-10-23 15:00"
+    no_weather: true
+    expect: {max_items: 0, note_contains: "геолокацией"}
+
+  - id: blizzard_time_machine
+    text: "Я у здании Экспо 2017, хочу прогуляться час"
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    preset: blizzard
+    expect: {no_outdoor_items: true, note_contains: "Симуляция погоды", rejected_reason: weather}
+
+  - id: smog_keeps_inside
+    text: "Я возле Mega Silk Way, хочу прогуляться час"
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    air: tests/fixtures/air_smog.json
+    expect: {no_outdoor_items: true, note_contains: "Воздух очень плохой", first_title_contains: "Mega"}
+
+  - id: only_events_now
+    text: "что интересного рядом"
+    lat: 51.0900
+    lon: 71.4165
+    at: "2026-10-23 19:10"
+    weather: tests/fixtures/weather_mild.json
+    overrides: {only_events: true}
+    expect: {only_events: true, first_title_contains: "Луна", leave_by_first: true, rejected_reason: not_event}
+
+  - id: surprise_me
+    text: "удиви меня"
+    lat: 51.0900
+    lon: 71.4165
+    at: "2026-10-23 15:00"
+    weather: tests/fixtures/weather_mild.json
+    surprise: true
+    seed: 7
+    expect: {min_items: 1, max_items: 1}
+

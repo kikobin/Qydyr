@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пульс Астаны — Qydyr</title>
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  body { overflow: hidden; background: #070F1C; }
+  .pulse { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto minmax(0, 1fr) auto; gap: 20px 28px; padding: 28px 36px; }
+  .p-head { grid-column: 1 / span 2; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .p-title { display: flex; align-items: center; gap: 18px; }
+  .p-title .logo { width: 52px; height: 52px; }
+  .p-title h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 2.4vw, 38px); letter-spacing: -0.02em; }
+  .p-title p { margin: 4px 0 0; color: var(--text-2); font-size: clamp(13px, 1.1vw, 17px); }
+  .live { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 15px; }
+  .live i { width: 10px; height: 10px; border-radius: 50%; background: var(--sky); animation: beat 1.4s ease-in-out infinite; }
+  .p-map { position: relative; border-radius: 28px; overflow: hidden; border: 1px solid #1D3150; background: var(--bg); }
+  #pmap { position: absolute; inset: 0; }
+  .p-side { grid-row: 2 / span 2; grid-column: 2; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .counters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .counter { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 20px; background: var(--surface); border: 1px solid #1D3150; }
+  .counter b { font-family: var(--font-display); font-weight: 600; font-size: 28px; }
+  .counter span { font-size: 13px; color: var(--text-2); }
+  .panel { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 22px; background: var(--surface); border: 1px solid #1D3150; min-height: 0; }
+  .panel h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+  .feed { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 9px; overflow: hidden; }
+  .feed-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; animation: rise2 0.4s ease-out; }
+  .feed-row .chips2 { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tagn { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--sky); font-size: 14px; }
+  .tagn.sun { border-color: var(--sun); color: var(--sun); }
+  .tagn.lang { border: 0; background: var(--card); font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
+  .ago { font-family: var(--font-mono); font-size: 13px; color: var(--text-2); white-space: nowrap; }
+  .bars { display: flex; flex-direction: column; gap: 8px; }
+  .brow { display: grid; grid-template-columns: 120px minmax(0, 1fr) 36px; align-items: center; gap: 10px; font-size: 14px; }
+  .brow .bar { height: 8px; border-radius: 4px; background: var(--sky); transition: width 0.6s; }
+  .brow .n { font-family: var(--font-mono); text-align: right; color: var(--text-2); }
+  .qr { display: flex; align-items: center; gap: 18px; padding: 16px; border-radius: 22px; background: #EDF2F7; color: #0A1424; }
+  .qr img { width: 132px; height: 132px; border-radius: 12px; flex-shrink: 0; background: #fff; }
+  .qr b { font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1.2; }
+  .qr p { margin: 6px 0; font-size: 15px; line-height: 1.45; color: #233958; }
+  .qr code { font-family: var(--font-mono); font-size: 15px; font-weight: 500; }
+  .ticker { display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 18px; background: var(--surface); border: 1px solid #1D3150; overflow: hidden; white-space: nowrap; }
+  .ticker strong { flex-shrink: 0; position: relative; z-index: 1; padding-right: 8px; background: var(--surface); font-size: 13px; letter-spacing: 0.1em; color: var(--sun); }
+  .ticker .vp { flex: 1; min-width: 0; overflow: hidden; }
+  .ticker .run { display: inline-flex; gap: 28px; animation: marquee 40s linear infinite; font-size: 16px; }
+  .ticker .run span::after { content: "/"; margin-left: 28px; color: var(--dusk); }
+  .empty { color: var(--text-3); font-size: 14px; }
+  .bubble-cell { width: 18px; height: 18px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 20px 6px rgba(254, 197, 12, 0.55); animation: flash 2.4s ease-out forwards; pointer-events: none; }
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @keyframes rise2 { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  @keyframes flash { 0% { transform: scale(0.4); opacity: 1; } 100% { transform: scale(3.2); opacity: 0; } }
+  @media (max-width: 1000px) { .pulse { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto auto; overflow-y: auto; position: static; } .p-side { grid-row: auto; grid-column: auto; } body { overflow: auto; } }
+</style>
+<script type="module" src="assets/pulse.js"></script>
+</head>
+<body>
+<div class="pulse">
+  <header class="p-head">
+    <div class="p-title"><span id="logo"></span><div><h1>Пульс Астаны</h1><p>О чём город спрашивает Qydyr прямо сейчас · ячейки ~1 км · без текста запросов и координат</p></div></div>
+    <span class="live"><i></i><span id="clock">в эфире</span></span>
+  </header>
+  <section class="p-map" aria-label="Карта запросов"><div id="pmap"></div></section>
+  <aside class="p-side">
+    <div class="counters">
+      <div class="counter"><b id="c-places">—</b><span id="l-places">мест в базе</span></div>
+      <div class="counter"><b id="c-events">—</b><span id="l-events">событий сегодня</span></div>
+      <div class="counter"><b id="c-req">—</b><span id="l-req">запросов за 3 часа</span></div>
+    </div>
+    <div class="panel" style="flex:1"><h2>Сейчас спрашивают</h2><div class="feed" id="feed"><span class="empty">Пока тихо. Спросите первым — QR ниже.</span></div></div>
+    <div class="panel"><h2>Чего хотят</h2><div class="bars" id="bars"><span class="empty">—</span></div></div>
+    <div class="qr"><img id="qr" alt="QR-код: открыть Qydyr"><div><b>Спросите сами</b><p>Наведите камеру и напишите, где вы и сколько у вас времени</p><code id="qr-url"></code></div></div>
+  </aside>
+  <footer class="ticker"><strong>СЕЙЧАС ИДЁТ</strong><div class="vp"><div class="run" id="ticker"><span>загружаю афишу…</span></div></div></footer>
+</div>
+</body>
+</html>
