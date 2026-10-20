@@ -14,7 +14,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # no DATABASE_URL secret yet (a fresh fork or repo): skip quietly instead of failing every 6 hours
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.s.outputs.ready }}
+    steps:
+      - id: s
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: echo "ready=$([ -n "$DATABASE_URL" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   collect:
+    needs: check
+    if: needs.check.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
