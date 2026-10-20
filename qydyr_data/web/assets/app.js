@@ -205,7 +205,7 @@ function itemCard(it, i) {
     <div class="card-top"><span class="num">${i + 1}</span>
       <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
         <h2>${esc(it.title)}</h2>
-        <div class="status"><span class="dot ${live}"></span><span>${esc(it.status)}</span></div>
+        <div class="status"><span class="dot ${live}"></span><span>${esc(it.status)}</span>${it.rating ? `<span class="meta" title="2ГИС, ${it.reviews}">★ ${String(it.rating.toFixed(1)).replace(".", ",")}</span>` : ""}</div>
         <span class="meta">${esc(walk)} · ${esc(dist)} · ${esc(t.stay)} ${lo === hi ? lo : `${lo}–${hi}`} ${esc(t.min)}</span>
         ${it.where ? `<span class="meta" style="font-family:var(--font-body)">${I.pin("i-s")} ${esc(it.where)}</span>` : ""}
         ${leave ? `<span class="leave">${I.clock("i-s")}${esc(leave)}</span>` : ""}

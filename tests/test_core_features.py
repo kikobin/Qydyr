@@ -185,7 +185,7 @@ def test_place_qa_answers_from_facts(db, sample_places):
         def structured(self, **kw):
             assert "FACTS" in kw["user"]
             return placeqa.LLMQA(answer="В данных этого нет.", certainty="unknown", evidence="")
-    qa = placeqa.answer(row, [], "можно ли с собакой?", at(19, 10), llm=FakeLLM())
+    qa = placeqa.answer(row, [], "принимают ли оплату картой?", at(19, 10), llm=FakeLLM())   # no rule: Claude
     assert qa.source == "claude" and qa.certainty == "unknown"
     museum = next(p for p in sample_places if p.name.startswith("Национальный музей"))
     mrow = store.place(db, museum.id, at(19, 10))

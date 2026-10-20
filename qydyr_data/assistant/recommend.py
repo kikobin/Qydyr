@@ -340,7 +340,9 @@ class Assistant:
             f"время: {WEEKDAYS[ans.at.weekday()]} {ans.at:%H:%M}",
             f"погода: {wsrc}",
             "фильтры: " + (", ".join(K.NEED_LABELS[n] for n in it.needs) or "нет"),
-            "данные: OpenStreetMap (© участники OSM) и афиши — ссылка у каждого пункта",
+            "данные: OpenStreetMap (© участники OSM)"
+            + (", 2ГИС" if any("2gis" in u for i in ans.items for u in i.sources) else "")
+            + " и афиши — ссылка у каждого пункта",
         ]
         if weather is not None and weather.air is not None and not weather.simulated:
             ans.used_data.insert(3, f"воздух: {weather.air.source}")
@@ -617,6 +619,9 @@ class Assistant:
         if (explicit and it.needs and hits[it.needs[0]][0] in ("unknown", "no") and ev_bonus < 0.1
                 and not any(v[0] == "yes" for v in hits.values())):
             penalty += 0.2
+        # "недорого пообедать": a free park is cheap, but eating is the point
+        if explicit and "food" in it.needs and hits["food"][0] in ("unknown", "no") and ev_bonus < 0.1:
+            penalty += 0.2
         # "тихо + кофе + розетка": a place that covers only one of three is not the answer
         covered = sum(1 for v in hits.values() if v[0] in ("yes", "likely"))
         if explicit and len(it.needs) >= 2 and covered / len(it.needs) < 0.5 and ev_bonus < 0.1:
@@ -738,6 +743,7 @@ class Assistant:
         sources = [u for u in [c.source_url, c.attrs.get("2gis:url")] + [e.get("url") for e in c.attached] if u]
         # how to find it inside a big building: "ТРЦ Керуен, 3 этаж" (2ГИС)
         where = ", ".join(x for x in (c.attrs.get("in_building"), c.attrs.get("where_inside")) if x) or None
+        stars = K.rating(c) if c.kind == "place" else None
         warnings = list(s.warnings)
         if c.attrs.get("hours_note") and len(c.attrs["hours_note"]) <= 120:
             warnings.append(c.attrs["hours_note"])
@@ -746,6 +752,7 @@ class Assistant:
             event_id=c.id if c.kind == "event" else None, category=c.category, subcategory=c.subcategory,
             lat=c.lat, lon=c.lon, distance_m=s.distance_m, walk_min=s.walk, by="taxi" if s.taxi else "walk",
             arrive_at=start, visit_min=s.visit, where=where,
+            rating=stars[0] if stars else None, reviews=stars[1] if stars else None,
             status=status, labels=self._labels(s, start), why=s.reasons[:4], group_fit=s.group_expl,
             group_detail=group_detail(c, group, start) if group else [], what_to_do=what, what_to_do_source=src,
             confidence=s.confidence, sources=sources, warnings=warnings,

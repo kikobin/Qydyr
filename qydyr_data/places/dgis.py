@@ -16,6 +16,7 @@ OSM keeps the last word where it has a value; 2ГИС fills the gaps and says so
 Data © 2ГИС, shown with attribution — check the API licence terms before a public launch."""
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import logging
@@ -118,6 +119,12 @@ TAG_KIDS_MENU = "food_service_details_food_kids_menu"
 TAG_ENGLISH_MENU = "food_service_details_food_english_menu"
 TAG_AVG_PRICE = "food_service_avg_price"          # "Чек 7000 ₸"
 TAG_CAPACITY = "food_service_capacity"            # "До 45 мест"
+TAG_PANORAMA = "food_service_infrastructure_panoramic_restaurant"   # "Панорамный вид"
+TAG_LIVE_MUSIC = "food_service_details_food_live_music"
+TAG_LUNCH = "food_service_business_lunch"         # "Бизнес-ланч"
+TAG_DOG = "food_service_dog_friendly_food"        # "Можно с собакой"
+TAG_OUTDOOR = ("food_service_infrastructure_patio", "food_service_infrastructure_outdoor_tables")
+TAG_CUISINE = "food_service_food_"                # "Европейская кухня", "Восточная кухня"
 KIDS_AREA_RE = re.compile(r"детск\w* (?:комнат|площадк|уголок|зон)|игров\w* (?:комнат|зон)", re.I)
 OUTDOOR_RE = re.compile(r"летн\w* (?:веранд|терраса|площадк)|терраса|веранда", re.I)
 PRICE_RE = re.compile(r"(\d[\d\s]*)\s*₸")
@@ -190,8 +197,10 @@ def rubric_names(item: dict) -> list[str]:
 
 
 def primary_name(item: dict) -> str:
+    """"Coffee Boom" from "Coffee Boom, кофейня"; an unnamed attraction (a viewpoint) by what it is."""
     ex = item.get("name_ex") or {}
-    return (ex.get("primary") or (item.get("name") or "").split(",")[0]).strip()
+    name = (ex.get("primary") or (item.get("name") or "").split(",")[0]).strip()
+    return name or (item.get("full_name") or "").removeprefix("Астана, ").split(",")[0].strip()
 
 
 def contacts(item: dict) -> dict[str, str]:
@@ -386,7 +395,19 @@ def _remember(conn, key: str, found: int) -> None:
                     on conflict (key) do update set asked_at = now(), found = excluded.found""", (key, found))
 
 
+_NOISE = {"rubric_ids", "icon_url", "is_context", "is_primary"}
+
+
+def slim(item: dict) -> dict:
+    """An item without what we never read: each attribute group lists the hundreds of rubric ids it applies to."""
+    return {**item, "attribute_groups": [
+        {**{k: v for k, v in g.items() if k not in _NOISE},
+         "attributes": [{k: v for k, v in a.items() if k not in _NOISE} for a in g.get("attributes") or []]}
+        for g in item.get("attribute_groups") or []]}
+
+
 def _save(conn, item: dict, place_id: str | None, query: str) -> None:
+    item = slim(item)
     pt = item["point"]
     conn.execute(
         """insert into dgis_items (id, place_id, name, lat, lon, data, query, fetched_at)
@@ -514,6 +535,41 @@ def discover(conn, client: DgisClient, limit: int, queries: list[str] | None = N
     return {"asked": asked, "new": new}
 
 
+# ------------------------------------------------------------------ moving the answers between databases
+EXPORT_FILE = settings.DATA_DIR / "dgis_items.jsonl.gz"
+
+
+def export_items(conn, path: Path | None = None) -> int:
+    """Everything asked so far, to one file: another database (production) gets it without spending the key."""
+    path = path or EXPORT_FILE
+    rows = conn.execute("select id, place_id, query, fetched_at, data from dgis_items order by id").fetchall()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps({"id": r["id"], "place_id": r["place_id"], "query": r["query"],
+                                "fetched_at": r["fetched_at"].isoformat(), "data": slim(r["data"])},
+                               ensure_ascii=False) + "\n")
+    return len(rows)
+
+
+def import_items(conn, path: Path | None = None) -> int:
+    n = 0
+    with gzip.open(path or EXPORT_FILE, "rt", encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            pt = r["data"]["point"]
+            conn.execute(
+                """insert into dgis_items (id, place_id, name, lat, lon, data, query, fetched_at)
+                   values (%s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                   on conflict (id) do update set place_id = coalesce(excluded.place_id, dgis_items.place_id),
+                     data = excluded.data, fetched_at = greatest(excluded.fetched_at, dgis_items.fetched_at)""",
+                (r["id"], r["place_id"], primary_name(r["data"]), pt["lat"], pt["lon"],
+                 json.dumps(r["data"], ensure_ascii=False), r["query"], r["fetched_at"]))
+            n += 1
+    conn.commit()
+    return n
+
+
 # ------------------------------------------------------------------ merging into places
 def merge(p: Place, item: dict) -> None:
     """What 2ГИС knows and OSM does not, written into the place with its source."""
@@ -551,8 +607,18 @@ def merge(p: Place, item: dict) -> None:
         p.attrs["kids_friendly"] = "kids_menu" if TAG_KIDS_MENU in tags and not KIDS_AREA_RE.search(names) else "kids_area"
     if TAG_ENGLISH_MENU in tags:
         p.attrs["english_menu"] = "yes"
-    if OUTDOOR_RE.search(names) and "outdoor_seating" not in p.attrs:
+    if (OUTDOOR_RE.search(names) or any(t.startswith(TAG_OUTDOOR) for t in tags)) and "outdoor_seating" not in p.attrs:
         p.attrs["outdoor_seating"] = "yes"
+    if TAG_PANORAMA in tags and "view" not in p.attrs:
+        p.attrs["view"], p.attrs["view:source"] = "yes", SOURCE_ID
+    if TAG_DOG in tags and "dog" not in p.attrs:                 # OSM tags it the same way: dog=yes
+        p.attrs["dog"], p.attrs["dog:source"] = "yes", SOURCE_ID
+    if TAG_LIVE_MUSIC in tags:
+        p.attrs["live_music"] = "yes"
+    if TAG_LUNCH in tags:
+        p.attrs["business_lunch"] = "yes"
+    if cuisine := [a["name"] for a in attrs_ if a["tag"].startswith(TAG_CUISINE) and a["name"].lower().endswith("кухня")]:
+        p.attrs["2gis:cuisine"] = cuisine[:3]
     for a in attrs_:
         if a["tag"] == TAG_AVG_PRICE and (m := PRICE_RE.search(a["name"])):
             p.attrs["avg_check"] = int(re.sub(r"\s", "", m[1]))

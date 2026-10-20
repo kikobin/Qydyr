@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 Need = Literal[
     "coffee", "food", "socket", "wifi", "quiet", "kids", "playground", "interactive", "museum", "culture",
     "park", "walk", "view", "unusual", "night", "nightlife", "free", "indoor", "accessible", "romantic",
-    "photo", "shopping", "event", "cheap",
+    "photo", "shopping", "event", "cheap", "dog",
 ]
 ALL_NEEDS: tuple[str, ...] = Need.__args__  # type: ignore[attr-defined]
 Certainty = Literal["yes", "likely", "unknown", "no"]
@@ -118,6 +118,8 @@ class Item(BaseModel):
     visit_min: tuple[int, int]
     status: str                                  # "открыто до 22:00" / "Идёт сейчас · вечерняя выставка"
     where: Optional[str] = None                  # how to find it: "ТРЦ Керуен, 3 этаж" (2ГИС)
+    rating: Optional[float] = None               # 2ГИС rating, when at least 15 reviews stand behind it
+    reviews: Optional[int] = None
     labels: list[str] = Field(default_factory=list)  # machine labels for the UI: now, soon, evening, free...
     why: list[str] = Field(default_factory=list)
     pitch: Optional[str] = None                  # the "why" in one human sentence, written by Claude from these facts

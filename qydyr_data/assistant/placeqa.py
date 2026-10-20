@@ -27,7 +27,10 @@ CERT_WORD = {"yes": "да", "likely": "вероятно", "unknown": "неизв
 HOURS_RE = re.compile(r"до скольки|во сколько|закрыва|открыт|откро|работает|часы|график|режим|open|close|hours|"
                       r"жұмыс", re.I)
 EVENTS_RE = re.compile(r"что (там )?(идет|идёт|сейчас)|событи|выставк|концерт|афиш|спектакл|what.?s on|event", re.I)
-PRICE_RE = re.compile(r"бесплатн|цена|стоит|стоимост|билет|вход|price|ticket|free|тегін|баға", re.I)
+PRICE_RE = re.compile(r"бесплатн|цена|цены|стоит|стоимост|билет|вход\b|чек|дорого|price|ticket|free|тегін|баға", re.I)
+WHERE_RE = re.compile(r"как найти|где (?:это|находится|вход)|какой этаж|на каком этаже|этаж|вход|остановк|"
+                      r"как доехать|where is|which floor|entrance|қай қабат", re.I)
+RATING_RE = re.compile(r"рейтинг|отзыв|оценк|хвалят|rating|review|пікір", re.I)
 
 
 class QAAnswer(BaseModel):
@@ -59,15 +62,33 @@ def facts_of(row: dict, events: list[dict]) -> dict:
 def answer(row: dict, events: list[dict], question: str, at: datetime, llm=None) -> QAAnswer:
     q = question.strip()
     parts: list[QAAnswer] = []
+    a = row.get("attrs") or {}
     if HOURS_RE.search(q):
         oh = row.get("opening_hours")
         now = describe_place(row)
+        src = "2ГИС" if a.get("opening_hours:source") else "OpenStreetMap"
+        note = f" {a['hours_note'].capitalize()}." if a.get("hours_note") else ""   # "касса до 20:30"
         if row.get("open_state") == "unknown":
             parts.append(QAAnswer(answer="Часы работы в данных не указаны — уточните перед выходом.",
-                                  certainty="unknown", evidence=[f"OpenStreetMap: opening_hours={oh}"] if oh else []))
+                                  certainty="unknown", evidence=[f"{src}: opening_hours={oh}"] if oh else []))
         else:
-            parts.append(QAAnswer(answer=f"Сейчас {now}.", certainty="yes", source="data",
-                                  evidence=[f"OpenStreetMap: opening_hours={oh}"] if oh else []))
+            parts.append(QAAnswer(answer=f"Сейчас {now}.{note}", certainty="yes", source="data",
+                                  evidence=[f"{src}: opening_hours={oh}"] if oh else []))
+    if WHERE_RE.search(q) and not PRICE_RE.search(q.replace("вход", "")):
+        inside = ", ".join(x for x in (a.get("in_building"), a.get("where_inside")) if x)
+        st = a.get("nearest_station") or {}
+        said = ([f"Где: {inside}."] if inside else []) + ([f"Рядом остановка «{st['name']}», {st['m']} м."]
+                                                         if st.get("name") and st.get("m") is not None else [])
+        if said or row.get("address"):
+            parts.append(QAAnswer(answer=" ".join(said) or f"Адрес: {row['address']}.", certainty="yes",
+                                  source="data", evidence=[a.get("2gis:url") or "OpenStreetMap"]))
+    if RATING_RE.search(q):
+        if a.get("2gis:rating") is not None and a.get("2gis:reviews"):
+            r = f"{float(a['2gis:rating']):.1f}".replace(".", ",")
+            parts.append(QAAnswer(answer=f"Рейтинг в 2ГИС {r} — {a['2gis:reviews']} отзывов.", certainty="yes",
+                                  source="data", evidence=[a.get("2gis:url") or "2ГИС"]))
+        else:
+            parts.append(QAAnswer(answer="Рейтинга в моих данных нет.", certainty="unknown"))
     if EVENTS_RE.search(q):
         if events:
             ev = "; ".join(f"{e['title']} — {describe_event(e)}" for e in events[:3])
@@ -92,6 +113,11 @@ def answer(row: dict, events: list[dict], question: str, at: datetime, llm=None)
             e = next(e for e in events if e.get("price_text"))
             parts.append(QAAnswer(answer=f"По афише: {e['price_text']}.", certainty="yes", source="data",
                                   evidence=[e.get("url") or "афиша"]))
+        elif a.get("avg_check"):
+            lunch = " Есть бизнес-ланч." if a.get("business_lunch") == "yes" else ""
+            check = f"{int(a['avg_check']):,}".replace(",", " ")
+            parts.append(QAAnswer(answer=f"Средний чек около {check} ₸ (2ГИС).{lunch}", certainty="yes", source="data",
+                                  evidence=[a.get("2gis:url") or "2ГИС"]))
         else:
             parts.append(QAAnswer(answer="Цены в данных нет — уточните на месте.", certainty="unknown"))
 
@@ -125,5 +151,6 @@ def answer(row: dict, events: list[dict], question: str, at: datetime, llm=None)
         except Exception as e:  # the LLM is optional
             log.warning("place QA via Claude failed: %s", e)
     return QAAnswer(answer="В данных об этом месте ответа нет — уточните на месте. Могу подсказать часы работы, "
-                           "события, вход, кофе, розетки, Wi‑Fi, детей и доступность для колясок.",
+                           "события, вход и средний чек, этаж и вход, рейтинг, кофе, розетки, Wi‑Fi, детей, "
+                           "собак и доступность для колясок.",
                     certainty="unknown")

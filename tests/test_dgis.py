@@ -128,6 +128,9 @@ def test_enrich_discover_apply(db, sample_places, tmp_path, monkeypatch):
     assert any("рейтинг 4,7 в 2ГИС, 320 отзывов" in w for w in item.why)
     assert item.need_hits["socket"] == "yes" and any("2gis.kz" in s for s in item.sources)
     assert item.where == "БЦ Изумрудный квартал, 1 этаж"                                  # where inside, from 2ГИС
+    assert (item.rating, item.reviews) == (4.7, 320)
+    from qydyr_data.bot.fmt import answer_html
+    assert "★ 4,7 (2ГИС)" in answer_html(ans.model_dump(mode="json"))
 
 
 # ------------------------------------------------------------------ rubric import and the tags 2ГИС really returns
@@ -317,3 +320,77 @@ def test_assistant_starts_from_an_address(db, sample_places):
     assert ans.anchor.source == "place" and asked == []
     ans = a.ask("хочу на Кенесары 40", lat=51.09, lon=71.41, at=at, weather_file=FIX / "weather_mild.json")
     assert ans.anchor.source == "gps"
+
+
+def test_export_and_load_elsewhere(db, sample_places, tmp_path):
+    """Production gets the answers from a file: no key, no requests; the bulky rubric id lists are dropped."""
+    load_everything(db, sample_places)
+    store.init_db(db)
+    noisy = item("70000001000000201", "Кофе Тест", 51.09, 71.41, tags=[("Wi-Fi", "Wi-Fi", "wifi")])
+    noisy["attribute_groups"][0]["rubric_ids"] = [str(i) for i in range(500)]
+    dgis._save(db, noisy, None, "rubric:162:city:1")
+    dgis._save(db, ITEMS["Астана Опера"][0], "osm:way/2002", "place:osm:way/2002")
+    f = tmp_path / "dgis.jsonl.gz"
+    assert dgis.export_items(db, f) == 2
+    db.execute("delete from dgis_items")
+    assert dgis.import_items(db, f) == 2
+    row = db.execute("select data, place_id from dgis_items where id = '70000001000000201'").fetchone()
+    assert "rubric_ids" not in row["data"]["attribute_groups"][0] and row["place_id"] is None
+    places = store.load_places(db)
+    enriched, added = dgis.apply(db, places)
+    assert (enriched, added) == (1, 1)
+
+
+def test_unnamed_attraction_is_named_by_what_it_is():
+    it = {"id": "70030076193065735", "type": "attraction", "full_name": "Астана, Смотровая площадка",
+          "point": {"lat": 51.12, "lon": 71.43}, "rubrics": [{"id": "111526", "name": "Смотровые площадки", "kind": "primary"}]}
+    assert dgis.to_place(it).name == "Смотровая площадка"
+
+
+def test_more_tags_view_dog_music_lunch_cuisine():
+    from qydyr_data.assistant import knowledge as K
+    from qydyr_data.assistant.intent import parse_rules
+    it = item("70000001000000301", "Высота", 51.1, 71.4, rubric=("164", "Рестораны"), tags=[
+        ("Ресторан / Кафе", "Панорамный вид", "food_service_infrastructure_panoramic_restaurant"),
+        ("Ресторан / Кафе", "Живая музыка", "food_service_details_food_live_music"),
+        ("Ресторан / Кафе", "Бизнес-ланч", "food_service_business_lunch"),
+        ("Ресторан / Кафе", "Можно с собакой", "food_service_dog_friendly_food"),
+        ("Ресторан / Кафе", "Столики на улице", "food_service_infrastructure_outdoor_tables_eat_out"),
+        ("Ресторан / Кафе", "Чек 12000 ₸", "food_service_avg_price"),
+        ("Кухня", "Европейская кухня", "food_service_food_european")])
+    p = dgis.to_place(it)
+    a = p.attrs
+    assert (a["view"], a["view:source"], a["dog"], a["live_music"], a["business_lunch"], a["outdoor_seating"]) == \
+        ("yes", "2gis", "yes", "yes", "yes", "yes")
+    c = K.Cand(kind="place", id=p.id, title=p.name, lat=p.lat, lon=p.lon, category=p.category,
+               subcategory=p.subcategory, indoor=p.indoor, attrs=a)
+    assert K.need_match(c, "view") == ("yes", "панорамный вид (2ГИС)")
+    assert K.need_match(c, "romantic")[0] == "yes" and K.need_match(c, "dog") == ("yes", "можно с собакой (2ГИС)")
+    tue_lunch, sat = datetime(2026, 10, 20, 13, 0, tzinfo=settings.TZ), datetime(2026, 10, 24, 13, 0, tzinfo=settings.TZ)
+    assert K.need_match(c, "cheap", at=tue_lunch)[0] == "likely"     # dear, but its weekday lunch is not
+    assert K.need_match(c, "cheap", at=sat)[0] == "no"
+    assert K.idea(c) == ("попробуйте блюда европейской кухни", "idea")
+    osm = K.Cand(kind="place", id="o", title="o", lat=0, lon=0, category="food", subcategory="restaurant",
+                 attrs={"cuisine": "uzbek;kazakh"})
+    assert K.idea(osm)[0] == "попробуйте блюда узбекской кухни"
+    museum = K.Cand(kind="place", id="m", title="m", lat=0, lon=0, category="culture", subcategory="museum", indoor="indoor")
+    assert K.need_match(museum, "dog")[0] == "unknown"            # no data, no guess
+    assert "dog" in parse_rules("куда сходить с собакой").needs and "dog" in parse_rules("итпен серуендеу").needs
+
+
+def test_place_questions_use_2gis_facts():
+    from qydyr_data.assistant import placeqa
+    row = {"place_id": "2gis:1", "closes_at": datetime(2026, 10, 21, 0, 0, tzinfo=settings.TZ), "opens_at": None,
+           "name": "La Bottega", "category": "food", "subcategory": "restaurant", "indoor": "indoor",
+           "open_state": "open", "opening_hours": "Mo-Su 10:00-24:00", "lat": 51.128, "lon": 71.425,
+           "attrs": {"avg_check": 7000, "business_lunch": "yes", "in_building": "ТРЦ Керуен", "where_inside": "3 этаж",
+                     "2gis:rating": 4.9, "2gis:reviews": 652, "2gis:url": "https://2gis.kz/astana/firm/1",
+                     "nearest_station": {"name": "Керуен", "m": 120, "types": ["bus"]},
+                     "opening_hours:source": "https://2gis.kz/astana/firm/1", "hours_note": "кухня до 23:00"}}
+    at = datetime(2026, 10, 20, 13, 0, tzinfo=settings.TZ)
+    assert placeqa.answer(row, [], "какой тут средний чек?", at).answer == "Средний чек около 7 000 ₸ (2ГИС). Есть бизнес-ланч."
+    where = placeqa.answer(row, [], "на каком этаже?", at)
+    assert where.answer == "Где: ТРЦ Керуен, 3 этаж. Рядом остановка «Керуен», 120 м." and where.certainty == "yes"
+    assert "4,9 — 652 отзывов" in placeqa.answer(row, [], "какие отзывы?", at).answer
+    hours = placeqa.answer(row, [], "до скольки работает?", at)
+    assert "Кухня до 23:00." in hours.answer and hours.evidence[0].startswith("2ГИС")

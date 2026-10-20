@@ -45,7 +45,7 @@ IDEAS = {
     "planetarium": "попадите на ближайший сеанс в куполе",
     "library": "найдите тихий читальный зал",
     "cafe": "возьмите горячий напиток и займите место у окна",
-    "restaurant": "закажите что-нибудь из национальной кухни",
+    "restaurant": "спросите, какое блюдо здесь заказывают чаще всего",
     "fast_food": "быстро перекусите",
     "food_court": "выберите кухню по настроению",
     "bar": "спросите фирменный напиток",
@@ -81,6 +81,7 @@ NEED_LABELS = {
     "park": "парк", "walk": "прогулка", "view": "вид", "unusual": "необычное", "night": "ночью",
     "nightlife": "бар/клуб", "free": "бесплатно", "indoor": "в помещении", "accessible": "доступно для колясок",
     "romantic": "свидание", "photo": "фото", "shopping": "шопинг", "event": "события", "cheap": "недорого",
+    "dog": "с собакой",
 }
 
 QUIET_SUBS = {"library", "museum", "gallery", "coworking", "garden", "books"}
@@ -267,7 +268,7 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         return "unknown", ""
     if need == "view":
         if sub == "viewpoint" or a.get("view") == "yes":
-            return "yes", "панорамный вид"
+            return "yes", "панорамный вид" + (" (2ГИС)" if a.get("view:source") == "2gis" else "")
         return ("likely", "") if sub == "attraction" else ("unknown", "")
     if need == "unusual":
         if c.attached:
@@ -283,7 +284,9 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
             return "yes", "работает после полуночи"
         return ("likely", "открыто допоздна") if close_h is not None and close_h >= 22 else ("unknown", "")
     if need == "nightlife":
-        return ("yes", "бар/клуб") if cat == "nightlife" else ("unknown", "")
+        if cat == "nightlife":
+            return "yes", "бар/клуб"
+        return ("likely", "живая музыка (2ГИС)") if a.get("live_music") == "yes" else ("unknown", "")
     if need == "free":
         if a.get("fee") == "no":
             return "yes", "вход свободный (OpenStreetMap)"
@@ -292,9 +295,15 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         return "unknown", ""
     if need == "cheap":
         check = a.get("avg_check")
+        local = at.astimezone(settings.TZ) if at else None
+        lunch = a.get("business_lunch") == "yes" and local is not None and local.weekday() < 5 and 11 <= local.hour < 16
         if check:
             label = f"средний чек {int(check):,} ₸ (2ГИС)".replace(",", " ")
+            if check > 6000 and lunch:   # a dear restaurant, but its weekday lunch is not
+                return "likely", f"бизнес-ланч (2ГИС), хотя {label}"
             return ("yes", label) if check <= 3500 else ("likely", label) if check <= 6000 else ("no", label)
+        if lunch:
+            return "likely", "бизнес-ланч (2ГИС)"
         if sub in PUBLIC_FREE or a.get("fee") == "no":
             return "yes", "бесплатно"
         return ("likely", "обычно недорого") if sub in {"fast_food", "food_court", "anticafe", "ice_cream", "library"} else ("unknown", "")
@@ -310,7 +319,19 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         return {"yes": ("yes", f"отмечено в {_src(a, 'wheelchair')}"), "limited": ("likely", f"частично доступно ({_src(a, 'wheelchair')})"),
                 "no": ("no", "")}.get(w, ("unknown", ""))
     if need == "romantic":
+        if cat == "food" and a.get("view") == "yes":
+            return "yes", "ресторан с панорамным видом" + (" (2ГИС)" if a.get("view:source") == "2gis" else "")
+        if a.get("live_music") == "yes":
+            return "likely", "живая музыка (2ГИС)"
         return ("likely", "") if sub in ROMANTIC_SUBS else ("unknown", "")
+    if need == "dog":
+        if a.get("dog") in ("yes", "leashed"):
+            return "yes", f"можно с собакой ({_src(a, 'dog')})"
+        if a.get("dog") == "no":
+            return "no", ""
+        if sub in {"park", "garden", "square", "promenade"} or cat == "park":
+            return "likely", "парк: обычно можно с собакой на поводке"
+        return "unknown", ""          # indoors it is up to the place: no data, no guess
     if need == "photo":
         return ("yes", "фотогеничное место") if sub in PHOTO_SUBS or a.get("view") == "yes" else ("unknown", "")
     if need == "shopping":
@@ -336,4 +357,26 @@ def idea(c: Cand) -> tuple[str, str]:
         return EVENT_IDEAS.get((c.event or {}).get("kind") or "", "загляните, пока идёт"), "idea"
     if indoor_attraction(c):
         return "это внутри здания: уточните на месте, работает ли сейчас", "idea"
+    if c.subcategory in ("restaurant", "cafe", "food_court") and (cu := cuisine(c)):
+        return f"попробуйте блюда {cu} кухни", "idea"
     return IDEAS.get(c.subcategory, "осмотритесь и сделайте фото"), "idea"
+
+
+CUISINE_RU = {"kazakh": "казахской", "italian": "итальянской", "pizza": "итальянской", "japanese": "японской",
+              "sushi": "японской", "georgian": "грузинской", "uzbek": "узбекской", "chinese": "китайской",
+              "korean": "корейской", "turkish": "турецкой", "european": "европейской", "asian": "азиатской",
+              "russian": "русской", "american": "американской", "indian": "индийской", "thai": "тайской",
+              "french": "французской", "mexican": "мексиканской", "vietnamese": "вьетнамской", "arab": "арабской",
+              "lebanese": "ливанской", "caucasian": "кавказской", "oriental": "восточной", "uyghur": "уйгурской"}
+
+
+def cuisine(c: Cand) -> str | None:
+    """The kitchen in the genitive, for an idea: "европейской" (2ГИС "Европейская кухня", OSM cuisine=european)."""
+    for name in c.attrs.get("2gis:cuisine") or []:
+        word = name.split()[0].lower()
+        if word.endswith("ая"):
+            return word[:-2] + "ой"
+    for code in str(c.attrs.get("cuisine") or "").lower().replace(",", ";").split(";"):
+        if (ru := CUISINE_RU.get(code.strip())):
+            return ru
+    return None

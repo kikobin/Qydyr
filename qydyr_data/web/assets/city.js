@@ -103,7 +103,7 @@ async function loadGaps(id) {
 const NEED = { coffee: "кофе", food: "поесть", socket: "розетка", wifi: "Wi‑Fi", quiet: "тихо", kids: "с ребёнком", playground: "площадка",
   interactive: "интерактив", museum: "музей", culture: "культура", park: "парк", walk: "прогулка", view: "вид", unusual: "необычное",
   night: "ночью", nightlife: "бар/клуб", free: "бесплатно", indoor: "под крышей", accessible: "без ступенек", romantic: "свидание",
-  photo: "фото", shopping: "шопинг", event: "события" };
+  photo: "фото", shopping: "шопинг", event: "события", cheap: "недорого", dog: "с собакой" };
 
 async function loadDemand() {
   let d;

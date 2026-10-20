@@ -5,6 +5,7 @@
   events [--source ID] [--no-llm] [--no-geocode] [--prune]
                               afishas / venue pages / Telegram -> events + sessions
   dgis [--mode] [--limit N]   2ГИС: hours, ratings, Wi-Fi, step-free entrances, places OSM lacks
+  dgis --export | --from-file  move the 2ГИС answers to another database (production) without the API
   dgis-probe                  one request to each 2ГИС API, raw answers to data/dgis_probe.zip
   audit [--scenario ID]       the city page: where typical requests find nothing nearby
   run-all                     places (if older than a day) + events — what the cron job runs
@@ -67,6 +68,17 @@ def cmd_dgis(args) -> None:
     import httpx
 
     from .places import dgis
+    if args.export or args.from_file:   # no API: move what was asked between databases
+        with store.connect() as conn:
+            if args.export:
+                print(f"2ГИС: {dgis.export_items(conn, Path(args.export))} items -> {args.export}")
+                return
+            print(f"2ГИС: {dgis.import_items(conn, Path(args.from_file))} items <- {args.from_file}")
+            places = store.load_places(conn)
+            enriched, added = dgis.apply(conn, places)
+            store.upsert_places(conn, places)
+        print(f"places: {enriched} enriched, {added} added")
+        return
     args.tier = args.tier or [1, 2, 3]
     client = dgis.DgisClient(delay_s=args.delay)
     with store.connect() as conn:
@@ -361,6 +373,10 @@ def main(argv: list[str] | None = None) -> None:
                          "restaurants, bars, 3 cafés and fast food. Default: all")
     sd.add_argument("--delay", type=float, default=0.6, help="seconds between requests (the server drops fast clients)")
     sd.add_argument("--limit", type=int, default=500, help="network requests this run (the key has a quota)")
+    sd.add_argument("--export", nargs="?", const=str(settings.DATA_DIR / "dgis_items.jsonl.gz"),
+                    help="write what was asked so far to a file (default data/dgis_items.jsonl.gz), no API")
+    sd.add_argument("--from-file", nargs="?", const=str(settings.DATA_DIR / "dgis_items.jsonl.gz"),
+                    help="load such a file into this database and merge it into places, no API and no key")
     sd.set_defaults(fn=cmd_dgis)
     sub.add_parser("dgis-probe", help="one request to each 2ГИС API, raw answers to data/dgis_probe.zip").set_defaults(
         fn=lambda a: print(__import__("qydyr_data.places.dgis_probe", fromlist=["run"]).run()))

@@ -50,6 +50,8 @@ def render(ans: Answer) -> str:
         lines += ["", f"{i}. {it.title} — {walk} ({it.distance_m} м)", f"   {it.status}"]
         if it.where:
             lines.append(f"   Где: {it.where}")
+        if it.rating:
+            lines.append(f"   Рейтинг в 2ГИС: {it.rating:.1f} ({it.reviews} отз.)".replace(".", ",", 1))
         if it.leave_by:
             lines.append("   Выходите сейчас, чтобы успеть" if it.leave_by <= ans.at + timedelta(minutes=1)
                          else f"   Выходите до {_hm(it.leave_by)}, чтобы успеть")
