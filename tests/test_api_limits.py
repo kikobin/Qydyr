@@ -85,3 +85,13 @@ def test_cors_only_own_origin(monkeypatch, origin, allowed):
     probe.post("/ask")(lambda: {})
     r = TestClient(probe).options("/ask", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
     assert (r.headers.get("access-control-allow-origin") == origin) is allowed
+
+
+def test_mini_app_code_is_revalidated_pictures_are_not():
+    # Telegram's webview caches the Mini App: after a deploy it must ask for the new pages and code
+    from fastapi.testclient import TestClient
+    from qydyr_data.api import app
+    c = TestClient(app)
+    for path in ("/app/", "/app/assets/app.js", "/app/assets/app.css"):
+        assert c.get(path).headers.get("cache-control") == "no-cache", path
+    assert c.get("/app/assets/art/tea.webp").headers.get("cache-control") != "no-cache"

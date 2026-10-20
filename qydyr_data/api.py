@@ -622,6 +622,16 @@ def places_near(lat: Lat, lon: Lon, radius: float = Query(800, gt=0, le=5000), a
 if settings.WEB_DIR.exists():
     app.mount("/app", StaticFiles(directory=settings.WEB_DIR, html=True), name="app")
 
+    @app.middleware("http")
+    async def fresh_app(request, call_next):
+        # Telegram's webview keeps the Mini App's pages and code: ask it to check for a newer version every time
+        # (a cheap 304 when nothing changed), so a deploy shows at once; pictures and fonts may stay cached
+        resp = await call_next(request)
+        path = request.url.path
+        if path.startswith("/app") and (path.endswith("/") or path.rsplit(".", 1)[-1] in ("html", "js", "css", "mjs")):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
         return RedirectResponse("/app/")
