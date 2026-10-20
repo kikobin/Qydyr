@@ -601,6 +601,9 @@ class Assistant:
             ev_bonus *= 0.3
         if it.persona == "tourist" and c.category in ("landmark", "culture"):
             bonus += 0.08
+        rated = K.rating(c)
+        if rated:   # how people rated it in 2ГИС: a nudge between equals, never a reason on its own
+            bonus += max(-0.06, min(0.06, (rated[0] - 4.2) * 0.08))
         if not K.kind_fit(c, it.event_kinds):  # "хочу на выставку": a theatre is culture, but not that
             penalty += 0.25
         # the first thing asked for matters most: "кофе и розетка" -> a museum is not an answer,
@@ -630,6 +633,10 @@ class Assistant:
                 reasons.append(f"{K.NEED_LABELS[n]}: {evd}")
             elif cert == "likely" and evd:
                 reasons.append(f"{K.NEED_LABELS[n]} — вероятно ({evd})")
+        if rated and rated[0] >= 4.5 and rated[1] >= 30:
+            n = rated[1]
+            word = "отзыв" if n % 10 == 1 and n % 100 != 11 else "отзыва" if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else "отзывов"
+            reasons.append(f"рейтинг {rated[0]:.1f} в 2ГИС, {n} {word}".replace(".", ","))
         if walk <= 5:
             reasons.append("в паре минут" if walk else "прямо здесь")
         return Scored(cand=c, walk=walk, arrive=arrive, start_at=start_at, window_end=window_end, visit=visit,
@@ -723,7 +730,7 @@ class Assistant:
             leave_by = max(leave_by, at)
             if leave_by - at > timedelta(minutes=horizon):
                 leave_by = None
-        sources = [u for u in [c.source_url] + [e.get("url") for e in c.attached] if u]
+        sources = [u for u in [c.source_url, c.attrs.get("2gis:url")] + [e.get("url") for e in c.attached] if u]
         return Item(
             kind=c.kind, title=c.title, place_id=c.id if c.kind == "place" else (c.event or {}).get("place_id"),
             event_id=c.id if c.kind == "event" else None, category=c.category, subcategory=c.subcategory,

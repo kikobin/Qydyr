@@ -4,6 +4,7 @@
   places [--from-file F]      OpenStreetMap -> places + opening intervals
   events [--source ID] [--no-llm] [--no-geocode] [--prune]
                               afishas / venue pages / Telegram -> events + sessions
+  dgis [--mode] [--limit N]   2ГИС: hours, ratings, Wi-Fi, step-free entrances, places OSM lacks
   audit [--scenario ID]       the city page: where typical requests find nothing nearby
   run-all                     places (if older than a day) + events — what the cron job runs
   whats-on --lat --lon        what is on nearby now (or --at "2026-10-23 19:10")
@@ -51,11 +52,35 @@ def cmd_places(args) -> None:
     else:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M")
         data = overpass.fetch(save_raw_to=settings.DATA_DIR / "raw" / f"overpass_{ts}.json")
+    from .places import dgis
     places = normalize_overpass(data)
     touched = overrides.apply(places, overrides.load())
     with store.connect() as conn:
+        enriched, added = dgis.apply(conn, places)   # what 2ГИС added on earlier runs stays after an OSM refresh
         n = store.upsert_places(conn, places)
-    print(f"places: {n} upserted ({touched} curated by overrides)")
+    print(f"places: {n} upserted ({touched} curated by overrides, {enriched} enriched and {added} added from 2ГИС)")
+
+
+def cmd_dgis(args) -> None:
+    """2ГИС: ask (within --limit requests), store, merge into places."""
+    import httpx
+
+    from .places import dgis
+    client = dgis.DgisClient()
+    with store.connect() as conn:
+        got = {}
+        try:
+            if args.mode in ("enrich", "both"):
+                got["enrich"] = dgis.enrich(conn, client, args.limit)
+            if args.mode in ("discover", "both"):
+                got["discover"] = dgis.discover(conn, client, args.limit)
+        except (RuntimeError, httpx.HTTPError) as e:   # quota, a blocked key, no network: keep what was found
+            conn.rollback()
+            print(f"2ГИС stopped: {e}")
+        places = store.load_places(conn)
+        enriched, added = dgis.apply(conn, places)
+        store.upsert_places(conn, places)
+    print(f"2ГИС: {client.requests} requests; {got}; places: {enriched} enriched, {added} added")
 
 
 def cmd_events(args) -> None:
@@ -321,6 +346,10 @@ def main(argv: list[str] | None = None) -> None:
     sm = sub.add_parser("mcp", help="Astana City MCP server (for Claude Desktop and other MCP clients)")
     sm.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     sm.set_defaults(fn=cmd_mcp)
+    sd = sub.add_parser("dgis", help="2ГИС Places API: hours, ratings, Wi-Fi, step-free entrances, more places")
+    sd.add_argument("--mode", choices=["enrich", "discover", "both"], default="both")
+    sd.add_argument("--limit", type=int, default=500, help="network requests this run (the key has a quota)")
+    sd.set_defaults(fn=cmd_dgis)
     sc = sub.add_parser("audit", help="city audit: where typical requests find nothing nearby (for /app/city.html)")
     sc.add_argument("--scenario", action="append", help="kids_evening, work_quiet, step_free, night, frost, events")
     sc.set_defaults(fn=cmd_audit)

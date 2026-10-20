@@ -211,13 +211,19 @@ def data_view(conn) -> dict:
     sources = [{"id": "osm", "kind": "osm", "title": "OpenStreetMap (© участники OSM, ODbL)",
                 "url": "https://www.openstreetmap.org", "items": st["places"]["n"], "unit": "мест",
                 "last_run_at": (db_sources.get("osm") or {}).get("last_run_at"), "status": (db_sources.get("osm") or {}).get("last_status")}]
+    if p_enr := st["places"]["dgis_enriched"] + st["places"]["dgis_new"]:
+        db = db_sources.get("2gis") or {}
+        sources.append({"id": "2gis", "kind": "catalog", "title": "2ГИС (© 2ГИС)", "url": "https://2gis.kz/astana",
+                        "items": p_enr, "unit": f"мест: {st['places']['dgis_enriched']} дополнено, {st['places']['dgis_new']} новых",
+                        "last_run_at": db.get("last_run_at"), "status": db.get("last_status")})
     for s in load_sources():
         if not s.enabled:
             continue
         db = db_sources.get(s.id) or {}
         sources.append({"id": s.id, "kind": s.kind, "title": s.title or s.id, "url": s.url, "items": per_source[s.id],
                         "unit": "событий", "last_run_at": db.get("last_run_at"), "status": db.get("last_status")})
-    sources = sources[:1] + sorted(sources[1:], key=lambda x: -x["items"])
+    head = 2 if len(sources) > 1 and sources[1]["id"] == "2gis" else 1
+    sources = sources[:head] + sorted(sources[head:], key=lambda x: -x["items"])
     tours = TOURS.tour_cards("ru")
     all_tours = list(TOURS.load_tours().values())
     facts = sum(len(st_.facts) for t in all_tours for st_ in t.stops)

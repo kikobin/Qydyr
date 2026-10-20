@@ -40,6 +40,7 @@ USER_AGENT = os.getenv(
 DATABASE_URL = os.getenv("DATABASE_URL")
 DB_CONNECT_TIMEOUT_S = int(os.getenv("QYDYR_DB_CONNECT_TIMEOUT", "10"))
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+DGIS_API_KEY = os.getenv("QYDYR_DGIS_KEY") or os.getenv("DGIS_API_KEY")   # 2ГИС Places API: hours, ratings, more places
 # Haiku 5.5: high-volume extraction and request understanding. Sonnet 5.5: translations, photos.
 CLAUDE_MODEL = os.getenv("QYDYR_CLAUDE_MODEL", "claude-haiku-5-5")
 CLAUDE_MODEL_SMART = os.getenv("QYDYR_CLAUDE_MODEL_SMART", "claude-sonnet-5-5")

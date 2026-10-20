@@ -48,8 +48,15 @@ def upsert_places(conn, places: list[Place], now: datetime | None = None,
     now = now or datetime.now(timezone.utc)
     start = datetime.combine(now.astimezone(settings.TZ).date(), time.min, tzinfo=settings.TZ)
     until = start + timedelta(days=horizon_days)
-    upsert_source(conn, id="osm", kind="osm", url="https://www.openstreetmap.org",
-                  title="OpenStreetMap (© OpenStreetMap contributors, ODbL)", reliability=0.85, status=f"ok: {len(places)} places")
+    n_osm = sum(1 for p in places if p.source_id == "osm")
+    if n_osm:
+        upsert_source(conn, id="osm", kind="osm", url="https://www.openstreetmap.org",
+                      title="OpenStreetMap (© OpenStreetMap contributors, ODbL)", reliability=0.85, status=f"ok: {n_osm} places")
+    n_dgis = sum(1 for p in places if p.source_id == "2gis")
+    if n_dgis or any("2gis:id" in p.attrs for p in places):
+        upsert_source(conn, id="2gis", kind="catalog", url="https://2gis.kz/astana", title="2ГИС (© 2ГИС)",
+                      reliability=0.85, status=f"ok: {n_dgis} new places, "
+                                                f"{sum(1 for p in places if p.source_id == 'osm' and '2gis:id' in p.attrs)} enriched")
     rows, hour_rows = [], []
     for p in places:
         rows.append((p.id, p.name, p.name_ru, p.name_kk, p.name_en, p.aliases, p.category, p.subcategory,
@@ -82,6 +89,15 @@ def upsert_places(conn, places: list[Place], now: datetime | None = None,
     conn.commit()
     log.info("upserted %d places, %d opening intervals", len(rows), len(hour_rows))
     return len(rows)
+
+
+def load_places(conn) -> list[Place]:
+    """The places as stored, back as Place objects: to merge new 2ГИС data in without re-reading OSM."""
+    rows = conn.execute(
+        """select id, name, name_ru, name_kk, name_en, aliases, category, subcategory, st_y(geom::geometry) lat,
+                  st_x(geom::geometry) lon, indoor, address, website, phone, opening_hours, hours_valid, attrs,
+                  source_id, source_url, fetched_at from places""").fetchall()
+    return [Place(**{**r, "aliases": list(r["aliases"] or []), "attrs": dict(r["attrs"] or {})}) for r in rows]
 
 
 def load_places_lite(conn) -> list[PlaceLite]:
@@ -268,10 +284,17 @@ def data_stats(conn) -> dict:
     """What the assistant stands on: every number on the "Откуда данные" page comes from here."""
     q = lambda sql, *a: conn.execute(sql, a).fetchone()  # noqa: E731
     places = q("""select count(*) n, count(*) filter (where hours_valid) with_hours,
-                         count(*) filter (where attrs ? 'opening_hours:source') hours_curated,
+                         count(*) filter (where attrs ? 'opening_hours:source'
+                                            and attrs->>'opening_hours:source' not like '%%2gis%%') hours_curated,
+                         count(*) filter (where attrs->>'opening_hours:source' like '%%2gis%%') hours_2gis,
                          count(*) filter (where attrs ? 'wheelchair') with_wheelchair,
+                         count(*) filter (where attrs->>'wheelchair:source' = '2gis') wheelchair_2gis,
                          count(*) filter (where attrs->>'wheelchair' = 'yes') wheelchair_yes,
                          count(*) filter (where website is not null or phone is not null) with_contacts,
+                         count(*) filter (where attrs ? '2gis:rating') with_rating,
+                         count(*) filter (where attrs ? '2gis:id' and source_id = 'osm') dgis_enriched,
+                         count(*) filter (where source_id = '2gis') dgis_new,
+                         count(*) filter (where attrs->>'wifi:source' = '2gis') wifi_2gis,
                          max(fetched_at) fetched_at from places where category <> 'anchor'""")
     by_cat = conn.execute(
         """select category, count(*)::int n, count(*) filter (where hours_valid)::int with_hours,

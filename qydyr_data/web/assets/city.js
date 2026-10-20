@@ -16,7 +16,7 @@ const plural = (n, [one, few, many]) => {
 };
 const COLORS = { none: "#FF7A7A", guess: "#B79CFF", far: "#FEC50C", ok: "#00AFCA" };
 const WEEKDAY = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
-const SRC_KIND = { osm: "карта", listing: "афиша", page: "сайт площадки", telegram: "Telegram", article_index: "подборки", manual: "вручную" };
+const SRC_KIND = { osm: "карта", catalog: "справочник", listing: "афиша", page: "сайт площадки", telegram: "Telegram", article_index: "подборки", manual: "вручную" };
 
 let map = null, gaps = null, scenarios = [], current = null;
 
@@ -127,16 +127,18 @@ async function loadData() {
     [n0(p.n), `${plural(p.n, ["место", "места", "мест"])} из OpenStreetMap`],
     [n0(e.n), `${plural(e.n, ["событие", "события", "событий"])} из ${d.sources.filter((s) => s.kind !== "osm" && s.items).length} афиш и сайтов`],
     [`${pct(p.with_hours, p.n)}%`, "мест с часами работы — остальным пишем «часы неизвестны»", pct(p.with_hours, p.n) < 50],
-    [`${pct(p.with_wheelchair, p.n)}%`, "мест с отметкой о доступности для колясок", true],
+    [`${pct(p.with_wheelchair, p.n)}%`, "мест с отметкой о доступности для колясок", pct(p.with_wheelchair, p.n) < 30],
+    ...(p.with_rating ? [[n0(p.with_rating), `${plural(p.with_rating, ["место", "места", "мест"])} с рейтингом и отзывами 2ГИС`]] : []),
     [n0(d.tours.facts), `${plural(d.tours.facts, ["факт", "факта", "фактов"])} в ${d.tours.n} прогулках, у каждого — ссылка на источник`],
   ];
   $("#kpis").innerHTML = kpis.map(([b, s, warn]) => `<div class="kpi${warn ? " warn" : ""}"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");
   const bars = [
     ["часы работы", p.with_hours, p.n], ["доступность", p.with_wheelchair, p.n], ["телефон или сайт", p.with_contacts, p.n],
+    ...(p.with_rating ? [["рейтинг 2ГИС", p.with_rating, p.n]] : []),
     ["событие на карте", e.with_place + e.geocoded, e.n], ["дата подтверждена цитатой", e.evidence_ok, e.n],
   ];
   $("#coverage").innerHTML = bars.map(([l, a, b]) => `<div class="bar"><span>${esc(l)}</span><span class="track"><span class="fill${pct(a, b) < 30 ? " bad" : ""}" style="display:block;width:${pct(a, b)}%"></span></span><em>${pct(a, b)}%</em></div>`).join("")
-    + `<p class="why">Вручную уточнено ${d.curated.places} ${plural(d.curated.places, ["место", "места", "мест"])}: как их называют люди («Чупа-чупс», «Пирамида»), часы ${d.curated.with_hours} ключевых мест — с официальных сайтов. Событий: ${e.jsonld} из разметки schema.org, ${e.llm} прочитал Claude, ${e.telegram} из Telegram.</p>`;
+    + `<p class="why">Вручную уточнено ${d.curated.places} ${plural(d.curated.places, ["место", "места", "мест"])}: как их называют люди («Чупа-чупс», «Пирамида»), часы ${d.curated.with_hours} ключевых мест — с официальных сайтов.${p.dgis_enriched + p.dgis_new ? ` Из 2ГИС: часы ${p.hours_2gis} мест, доступность ${p.wheelchair_2gis}, Wi‑Fi ${p.wifi_2gis}, ${p.dgis_new} новых мест, которых нет в OSM.` : ""} Событий: ${e.jsonld} из разметки schema.org, ${e.llm} прочитал Claude, ${e.telegram} из Telegram.</p>`;
   $("#schedule").innerHTML = `<ul class="plain">${d.schedule.map((s) => `<li><b>${esc(s.what)}</b> — ${esc(s.when)}</li>`).join("")}<li><b>Погода и воздух</b> — ${esc(d.weather)}</li></ul>
     <p class="muted" style="margin:10px 0 0">База обновлена: места ${esc(ago(p.fetched_at))}, события ${esc(ago(e.last_seen_at))}.</p>`;
   $("#sources").innerHTML = `<table><thead><tr><th>Источник</th><th>Тип</th><th style="text-align:right">В базе</th><th>Последний сбор</th></tr></thead><tbody>${

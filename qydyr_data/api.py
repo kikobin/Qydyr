@@ -216,7 +216,7 @@ def health() -> dict:
 
 
 @app.get("/config")
-def config() -> dict:
+def config(data: DbData = Depends(get_data)) -> dict:
     return {
         "version": app.version,
         "now": _now().isoformat(),
@@ -224,8 +224,17 @@ def config() -> dict:
         "bot_username": settings.BOT_USERNAME,
         "llm": bool(settings.ANTHROPIC_API_KEY),
         "presets": [{"id": "now", "label": "сейчас"}] + [{"id": k, "label": v["label"]} for k, v in PRESETS.items()],
-        "attribution": ["© OpenStreetMap contributors", "Weather: Open-Meteo", "Air: Open-Meteo, CAMS"],
+        "attribution": ["© OpenStreetMap contributors"] + (["© 2ГИС"] if _has_dgis(data) else [])
+                       + ["Weather: Open-Meteo", "Air: Open-Meteo, CAMS"],
     }
+
+
+def _has_dgis(data: DbData) -> bool:
+    try:
+        return bool(data.conn.execute("select exists (select 1 from places where source_id = '2gis' or attrs ? '2gis:id') e").fetchone()["e"])
+    except Exception:
+        data.conn.rollback()
+        return False
 
 
 def _check_overrides(o: Overrides | None) -> None:

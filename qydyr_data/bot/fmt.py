@@ -25,7 +25,7 @@ def hm(s: str | None) -> str:
 
 def host(u: str) -> str:
     h = urlsplit(u).netloc.replace("www.", "")
-    return "OpenStreetMap" if "openstreetmap" in h else h or u
+    return "OpenStreetMap" if "openstreetmap" in h else "2ГИС" if "2gis" in h else h or u
 
 
 def in_astana(lat: float, lon: float) -> bool:

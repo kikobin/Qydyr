@@ -69,7 +69,7 @@ function back() {
 
 function catLabel(cat) { return S.t.category[cat] || S.t.category.other; }
 function confWord(c) { return c >= 0.75 ? S.t.confidence.high : c >= 0.5 ? S.t.confidence.mid : S.t.confidence.low; }
-function host(u) { try { const h = new URL(u).hostname.replace("www.", ""); return h.includes("openstreetmap") ? "OpenStreetMap" : h; } catch (_) { return u; } }
+function host(u) { try { const h = new URL(u).hostname.replace("www.", ""); return h.includes("openstreetmap") ? "OpenStreetMap" : h.includes("2gis") ? "2ГИС" : h; } catch (_) { return u; } }
 function nowLabel() {
   const at = S.answer ? S.answer.at : (S.at || serverNow().toISOString());
   const d = local(at);

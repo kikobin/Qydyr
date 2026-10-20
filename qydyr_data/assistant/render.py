@@ -16,7 +16,7 @@ SRC_MARK = {"data": "из афиши", "idea": "идея ассистента"}
 
 def source_name(url: str) -> str:
     host = urlsplit(url).netloc.replace("www.", "")
-    return "OpenStreetMap" if "openstreetmap" in host else host or url
+    return "OpenStreetMap" if "openstreetmap" in host else "2ГИС" if "2gis" in host else host or url
 
 
 def _hm(dt) -> str:

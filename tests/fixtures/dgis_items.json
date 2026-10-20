@@ -1,0 +1,317 @@
+{
+ "_note": "SYNTHETIC test data shaped like 2GIS Places API 3.0 /items answers (fields: point, schedule, reviews, rubrics, attribute_groups, contact_groups, name_ex). Not real 2GIS data.",
+ "Кафе «Коктем»": [
+  {
+   "id": "70000001000000002",
+   "type": "branch",
+   "name": "Коктем, кафе",
+   "name_ex": {
+    "primary": "Коктем",
+    "extension": "кафе"
+   },
+   "point": {
+    "lat": 51.11925,
+    "lon": 71.46895
+   },
+   "schedule": {
+    "Mon": {
+     "working_hours": [
+      {
+       "from": "09:00",
+       "to": "21:00"
+      }
+     ]
+    }
+   },
+   "reviews": {
+    "general_rating": 4.3,
+    "general_review_count": 45
+   },
+   "rubrics": [
+    {
+     "name": "Кафе"
+    }
+   ],
+   "attribute_groups": [
+    {
+     "name": "Wi-Fi",
+     "attributes": [
+      {
+       "name": "Wi-Fi"
+      }
+     ]
+    },
+    {
+     "name": "Удобства",
+     "attributes": [
+      {
+       "name": "Розетки у столиков"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "кофейня": [
+  {
+   "id": "70000001000000003",
+   "type": "branch",
+   "name": "Coffee Boom, кофейня",
+   "name_ex": {
+    "primary": "Coffee Boom",
+    "extension": "кофейня"
+   },
+   "address_name": "Мангилик Ел, 55",
+   "point": {
+    "lat": 51.0908,
+    "lon": 71.4152
+   },
+   "schedule": {
+    "Mon": {
+     "working_hours": [
+      {
+       "from": "08:00",
+       "to": "23:00"
+      }
+     ]
+    },
+    "Tue": {
+     "working_hours": [
+      {
+       "from": "08:00",
+       "to": "23:00"
+      }
+     ]
+    },
+    "Wed": {
+     "working_hours": [
+      {
+       "from": "08:00",
+       "to": "23:00"
+      }
+     ]
+    },
+    "Thu": {
+     "working_hours": [
+      {
+       "from": "08:00",
+       "to": "23:00"
+      }
+     ]
+    },
+    "Fri": {
+     "working_hours": [
+      {
+       "from": "08:00",
+       "to": "00:00"
+      }
+     ]
+    },
+    "Sat": {
+     "working_hours": [
+      {
+       "from": "09:00",
+       "to": "02:00"
+      }
+     ]
+    },
+    "Sun": {
+     "working_hours": [
+      {
+       "from": "09:00",
+       "to": "23:00"
+      }
+     ]
+    }
+   },
+   "reviews": {
+    "general_rating": 4.7,
+    "general_review_count": 320
+   },
+   "rubrics": [
+    {
+     "name": "Кофейни"
+    }
+   ],
+   "attribute_groups": [
+    {
+     "name": "Wi-Fi",
+     "attributes": [
+      {
+       "name": "Wi-Fi"
+      }
+     ]
+    },
+    {
+     "name": "Удобства",
+     "attributes": [
+      {
+       "name": "Розетки"
+      },
+      {
+       "name": "Вход для колясок"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "70000001000000004",
+   "type": "branch",
+   "name": "Mega Silk Way, торгово-развлекательный центр",
+   "name_ex": {
+    "primary": "Mega Silk Way",
+    "extension": "торгово-развлекательный центр"
+   },
+   "point": {
+    "lat": 51.0898,
+    "lon": 71.4079
+   },
+   "schedule": {
+    "is_24x7": false
+   },
+   "rubrics": [
+    {
+     "name": "Торгово-развлекательные центры"
+    }
+   ]
+  },
+  {
+   "id": "70000001000000005",
+   "type": "branch",
+   "name": "Kidburg, детский развлекательный центр",
+   "name_ex": {
+    "primary": "Kidburg",
+    "extension": "детский развлекательный центр"
+   },
+   "point": {
+    "lat": 51.0901,
+    "lon": 71.4088
+   },
+   "schedule": {
+    "is_24x7": true
+   },
+   "rubrics": [
+    {
+     "name": "Детские развлекательные центры"
+    }
+   ]
+  },
+  {
+   "id": "70000001000000006",
+   "type": "branch",
+   "name": "Шиномонтаж",
+   "point": {
+    "lat": 51.0911,
+    "lon": 71.4161
+   },
+   "rubrics": [
+    {
+     "name": "Шиномонтаж"
+    }
+   ]
+  }
+ ],
+ "Астана Опера": [
+  {
+   "id": "70000001000000001",
+   "type": "branch",
+   "name": "Астана Опера, театр оперы и балета",
+   "name_ex": {
+    "primary": "Астана Опера",
+    "extension": "театр оперы и балета"
+   },
+   "address_name": "Кунаева, 1",
+   "point": {
+    "lat": 51.13075,
+    "lon": 71.41455
+   },
+   "schedule": {
+    "Tue": {
+     "working_hours": [
+      {
+       "from": "10:00",
+       "to": "20:00"
+      }
+     ]
+    },
+    "Wed": {
+     "working_hours": [
+      {
+       "from": "10:00",
+       "to": "20:00"
+      }
+     ]
+    },
+    "Thu": {
+     "working_hours": [
+      {
+       "from": "10:00",
+       "to": "20:00"
+      }
+     ]
+    },
+    "Fri": {
+     "working_hours": [
+      {
+       "from": "10:00",
+       "to": "20:00"
+      }
+     ]
+    },
+    "Sat": {
+     "working_hours": [
+      {
+       "from": "10:00",
+       "to": "20:00"
+      }
+     ]
+    },
+    "Sun": {
+     "working_hours": [
+      {
+       "from": "10:00",
+       "to": "20:00"
+      }
+     ]
+    }
+   },
+   "reviews": {
+    "general_rating": 4.8,
+    "general_review_count": 2140
+   },
+   "rubrics": [
+    {
+     "id": "1",
+     "name": "Театры",
+     "kind": "primary"
+    }
+   ],
+   "attribute_groups": [
+    {
+     "name": "Доступность",
+     "attributes": [
+      {
+       "name": "Пандус"
+      }
+     ]
+    }
+   ],
+   "contact_groups": [
+    {
+     "contacts": [
+      {
+       "type": "phone",
+       "value": "+77172000001"
+      },
+      {
+       "type": "website",
+       "value": "astanaopera.kz",
+       "url": "https://astanaopera.kz"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

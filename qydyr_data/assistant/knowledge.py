@@ -26,7 +26,7 @@ VISIT: dict[str, tuple[int, int]] = {
     "trampoline_park": (60, 90), "arcade": (45, 60), "minigolf": (45, 60), "sports_centre": (60, 90),
     "concert_hall": (90, 120), "events_venue": (60, 120), "exhibition_centre": (45, 90),
     "place_of_worship": (15, 30), "hookah": (60, 120), "karaoke": (90, 150), "biergarten": (60, 90),
-    "stadium": (90, 150), "dance": (60, 90), "books": (20, 40), "souvenir": (15, 30),
+    "stadium": (90, 150), "dance": (60, 90), "books": (20, 40), "souvenir": (15, 30), "kids_centre": (60, 90),
 }
 EVENT_VISIT = {"exhibition": (40, 60), "concert": (90, 120), "performance": (120, 150), "festival": (60, 120),
                "fair": (45, 90), "workshop": (90, 120), "lecture": (60, 90), "party": (120, 180),
@@ -34,6 +34,7 @@ EVENT_VISIT = {"exhibition": (40, 60), "concert": (90, 120), "performance": (120
                "other": (60, 90)}
 
 IDEAS = {
+    "kids_centre": "дайте ребёнку поиграть, а сами передохните рядом",
     "museum": "начните с главного зала, потом — временная экспозиция",
     "gallery": "посмотрите текущую выставку целиком, это не займёт много времени",
     "theatre": "проверьте в кассе спектакли на сегодня",
@@ -81,7 +82,7 @@ NEED_LABELS = {
 
 QUIET_SUBS = {"library", "museum", "gallery", "coworking", "garden", "books"}
 NOISY_SUBS = {"bar", "pub", "nightclub", "karaoke", "stadium", "mall", "fast_food", "food_court", "arcade", "trampoline_park", "bowling"}
-KIDS_YES = {"playground", "zoo", "aquarium", "trampoline_park", "theme_park", "water_park", "ice_cream"}
+KIDS_YES = {"playground", "zoo", "aquarium", "trampoline_park", "theme_park", "water_park", "ice_cream", "kids_centre"}
 KIDS_LIKELY = {"museum", "mall", "park", "garden", "cinema", "planetarium", "ice_rink", "arcade", "bowling", "cafe",
                "fountain", "minigolf"}
 ADULT_ONLY = {"bar", "pub", "nightclub", "hookah"}
@@ -139,6 +140,17 @@ def visit_range(c: Cand) -> tuple[int, int]:
     return VISIT.get(c.subcategory, (30, 45))
 
 
+def _src(a: dict, key: str) -> str:
+    """Where a fact about the place comes from: OpenStreetMap, or 2ГИС where OSM had nothing."""
+    return "2ГИС" if a.get(f"{key}:source") == "2gis" else "OpenStreetMap"
+
+
+def rating(c: Cand) -> tuple[float, int] | None:
+    """2ГИС rating and number of reviews, when there are enough reviews to mean something."""
+    r, n = c.attrs.get("2gis:rating"), c.attrs.get("2gis:reviews")
+    return (float(r), int(n)) if r is not None and n and int(n) >= 15 else None
+
+
 def _desc(c: Cand) -> str:
     parts = [c.description or "", str(c.attrs.get("description") or "")]
     parts += [str(e.get("description") or "") for e in c.attached]
@@ -187,11 +199,13 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         return ("likely", "есть фуд-корт или кафе") if sub in {"mall", "theme_park", "zoo"} else ("unknown", "")
     if need == "wifi":
         if a.get("wifi") or a.get("internet_access") in ("wlan", "yes", "wifi"):
-            return "yes", "Wi‑Fi (OpenStreetMap)"
+            return "yes", f"Wi‑Fi ({_src(a, 'wifi')})"
         return ("likely", "") if sub in {"coworking", "mall", "library"} else ("unknown", "")
     if need == "socket":
         if sub == "coworking":
             return "yes", "коворкинг"
+        if a.get("socket") == "yes":
+            return "yes", "розетки (2ГИС)"
         if a.get("wifi") or a.get("internet_access") in ("wlan", "yes", "wifi"):
             return "likely", "есть Wi‑Fi — розетки обычно есть, но не гарантированы"
         return ("likely", "") if sub in {"library", "cafe"} else ("unknown", "")
@@ -271,7 +285,7 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         w = a.get("wheelchair")
         if w is None and sub == "mall":   # OSM rarely marks it; a big mall in Astana is built with lifts and ramps
             return "likely", "крупный торговый центр: обычно лифты и пандусы, но в OpenStreetMap не отмечено"
-        return {"yes": ("yes", "отмечено в OpenStreetMap"), "limited": ("likely", "частично доступно (OpenStreetMap)"),
+        return {"yes": ("yes", f"отмечено в {_src(a, 'wheelchair')}"), "limited": ("likely", f"частично доступно ({_src(a, 'wheelchair')})"),
                 "no": ("no", "")}.get(w, ("unknown", ""))
     if need == "romantic":
         return ("likely", "") if sub in ROMANTIC_SUBS else ("unknown", "")

@@ -1,7 +1,7 @@
 name: collect data
 
 # Places (OpenStreetMap) once a day, events every 6 hours.
-# Repo secrets: DATABASE_URL (Supabase session pooler URI), ANTHROPIC_API_KEY.
+# Repo secrets: DATABASE_URL (Supabase session pooler URI), ANTHROPIC_API_KEY, QYDYR_DGIS_KEY (2ГИС, optional).
 on:
   schedule:
     - cron: "41 1 * * *"     # 06:41 Astana — places + events
@@ -19,6 +19,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      QYDYR_DGIS_KEY: ${{ secrets.QYDYR_DGIS_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,6 +36,10 @@ jobs:
         run: python -m qydyr_data places
       - name: Events
         run: python -m qydyr_data events
+      - name: 2ГИС (hours, ratings, Wi-Fi, step-free entrances, places OSM lacks)
+        if: env.QYDYR_DGIS_KEY != '' && (github.event.schedule == '41 1 * * *' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        run: python -m qydyr_data dgis --limit 800
       - name: City audit (where typical requests find nothing nearby)
         run: python -m qydyr_data audit
       - name: Report
