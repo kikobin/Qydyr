@@ -8,6 +8,7 @@ DEMAND_K requests. Both feed the "Qydyr для города" page (/app/city.htm
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -82,6 +83,9 @@ def cells(places: list[dict]) -> dict[str, list[dict]]:
     return {c: ps for c, ps in out.items() if len(ps) >= MIN_PLACES}
 
 
+GENERIC = re.compile(r"площадк|парковк|остановк|стоянк|туалет|банкомат|^\W*$", re.I)
+
+
 def label(lat: float, lon: float, places: list[dict], here: list[dict] | None = None) -> str | None:
     """How a cell reads as a part of the city: the nearest well-known place within ~1.2 km ("Mega Silk Way"),
     else the street most of its places are on."""
@@ -97,7 +101,15 @@ def label(lat: float, lon: float, places: list[dict], here: list[dict] | None = 
         return best[1]
     streets = Counter(st for p in here or [] if (st := (p.get("address") or "").split(",")[0].strip())
                       and sum(ch.isalpha() for ch in st) >= 3)
-    return streets.most_common(1)[0][0] if streets else None
+    if streets:
+        return streets.most_common(1)[0][0]
+    # no landmark, no street: the place people would know, not a generic "Детская площадка"
+    named = [n for p in here or [] if (n := p.get("name_ru") or p.get("name")) and not GENERIC.search(n)]
+    if named:
+        return f"у «{named[0]}»"
+    near = min(((travel.haversine_m(lat, lon, p["lat"], p["lon"]), n) for p in places
+                if (n := p["name_ru"] or p["name"]) and not GENERIC.search(n)), default=None)
+    return f"около «{near[1]}»" if near and near[0] <= 3000 else None
 
 
 def _fits(item, must: tuple[str, ...], sure: bool = False) -> bool:
@@ -160,12 +172,21 @@ def gaps_view(conn, scenario: str) -> dict:
             "cells": [{k: r[k] for k in ("cell", "lat", "lon", "label", "places", "options", "confirmed", "nearest_min",
                                          "best", "level")} for r in rows],
             "summary": {"cells": len(rows), "none": n["none"], "guess": n["guess"], "far": n["far"], "ok": n["ok"]},
-            "top": [{k: r[k] for k in ("cell", "label", "places", "options", "confirmed", "nearest_min", "best", "level")}
+            "top": [{k: r[k] for k in ("cell", "lat", "lon", "label", "places", "options", "confirmed", "nearest_min", "best",
+                                       "level")}
                     for r in top]}
 
 
-def scenarios_view() -> list[dict]:
-    return [{"id": s.id, "title": s.title, "request": s.text, "why": s.why} for s in SCENARIOS]
+def scenarios_view(conn=None) -> list[dict]:
+    """Every scenario, with how the city does on it when the audit has run (for the cards on the city page)."""
+    out = []
+    for s in SCENARIOS:
+        row = {"id": s.id, "title": s.title, "request": s.text, "why": s.why}
+        if conn is not None:
+            n = Counter(level(r, s) for r in store.audit(conn, s.id))
+            row["summary"] = {"cells": sum(n.values()), "none": n["none"], "guess": n["guess"], "far": n["far"], "ok": n["ok"]}
+        out.append(row)
+    return out
 
 
 def unmet_needs(intent, items) -> tuple[list[str], list[str]]:
@@ -192,11 +213,18 @@ def demand_view(conn, live: list[dict] | None = None) -> dict:
     for r in rows:
         by_need[r["need"]] += r["unmet"]
         asked_need[r["need"]] += r["asked"]
+    live = [dict(x) for x in live or []]
+    want = list({*cells_, *(x["cell"] for x in live)})
+    names = {r["cell"]: r["label"] for r in conn.execute(
+        "select distinct on (cell) cell, label from city_audit where cell = any(%s) and label is not null", (want,))
+    } if want else {}
+    for c in [*cells_.values(), *live]:   # "у Хан Шатыра" reads better than a geohash
+        c["label"] = names.get(c["cell"])
     return {"k": store.DEMAND_K, "days": 30,
             "cells": sorted(cells_.values(), key=lambda c: -c["unmet"]),
             "needs": [{"need": n, "label": K.NEED_LABELS.get(n, n), "unmet": u, "asked": asked_need[n]}
                       for n, u in by_need.most_common() if u],
-            "live": live or []}
+            "live": live}
 
 
 def data_view(conn) -> dict:

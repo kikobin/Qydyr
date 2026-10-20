@@ -341,3 +341,10 @@ def test_a_follow_up_keeps_what_was_said_before(loaded):
     assert nxt.intent.with_kids and "coffee" in nxt.intent.needs
     fresh = a.ask("забудь, я у Байтерека", at=at(16), weather_file=MILD, context=ctx, context_anchor=first.anchor)
     assert fresh.anchor.label != first.anchor.label and not fresh.intent.with_kids
+
+
+def test_hours_and_minutes_together():
+    """"1 час 30 минут" was read as an hour: the minutes after the hours count too."""
+    assert parse_budget("у меня 1 час 30 минут") == (90, 90)
+    assert parse_budget("2ч 15м") == (135, 135) and parse_budget("час и 20 минут") == (80, 80)
+    assert parse_budget("1 hour 30 min") == (90, 90) and parse_budget("1 час") == (60, 60)

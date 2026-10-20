@@ -1037,29 +1037,65 @@ async function loadWalks() {
   if (S.view === "home") renderSheet();
 }
 
-// voice input: the browser's speech recognition (Claude doesn't take audio; nothing is sent to us but text)
+// voice input. Telegram's webview has no SpeechRecognition, so when the server can transcribe (Whisper, /voice)
+// the mic records a short clip and sends it there; the browser's own recognition is the fallback elsewhere.
 function setupVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const canRecord = !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   const mic = $("#mic");
-  if (!SR) { mic.hidden = true; return; }
-  let rec = null;
-  mic.addEventListener("click", () => {
+  if (!SR && !canRecord) { mic.hidden = true; return; }
+  let rec = null, stopTimer = null;
+  const done = () => {
+    mic.classList.remove("listening");
+    $("#q").placeholder = S.t.placeholder;
+    clearTimeout(stopTimer);
+    rec = null;
+  };
+  mic.addEventListener("click", async () => {
     if (rec) { rec.stop(); return; }
+    T.haptic.tap();
+    if (canRecord && S.config && S.config.voice) return record();
+    if (!SR) { toast(S.t.voice_denied); return; }
     rec = new SR();
     rec.lang = SPEECH_LANG[S.lang];
     rec.interimResults = true;
     mic.classList.add("listening");
     $("#q").placeholder = S.t.listening;
     rec.onresult = (e) => { $("#q").value = Array.from(e.results).map((r) => r[0].transcript).join(" "); };
-    rec.onend = () => {
-      mic.classList.remove("listening");
-      $("#q").placeholder = S.t.placeholder;
-      rec = null;
-      if ($("#q").value.trim()) submit();
-    };
-    rec.onerror = () => { toast(S.t.voice_unsupported); };
+    rec.onend = () => { done(); if ($("#q").value.trim()) submit(); };
+    rec.onerror = (e) => { toast(e.error === "not-allowed" ? S.t.voice_denied : S.t.voice_unsupported); };
     rec.start();
   });
+
+  async function record() {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (_) { toast(S.t.voice_denied); return; }
+    const type = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+    const chunks = [];
+    rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      done();
+      const blob = new Blob(chunks, { type: (type || "audio/webm").split(";")[0] });
+      if (blob.size < 1500) return;   // a tap, not a sentence
+      $("#q").placeholder = S.t.listening;
+      try {
+        const { text } = await api.voice(blob, S.lang);
+        $("#q").placeholder = S.t.placeholder;
+        if (!text) { toast(S.t.voice_fail); return; }
+        $("#q").value = text;
+        submit();
+      } catch (_) {
+        $("#q").placeholder = S.t.placeholder;
+        toast(S.t.voice_fail);
+      }
+    };
+    mic.classList.add("listening");
+    $("#q").placeholder = S.t.voice_stop;
+    rec.start();
+    stopTimer = setTimeout(() => rec && rec.stop(), 15000);   // a request, not a speech
+  }
 }
 
 function submit() {

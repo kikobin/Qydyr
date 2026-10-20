@@ -21,6 +21,7 @@ rate-limited per Telegram user (valid initData) or per IP.
 """
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import time
@@ -81,7 +82,7 @@ _HITS: dict[str, deque] = defaultdict(deque)
 
 def _costly(request: Request) -> bool:
     p = request.url.path
-    if request.method == "POST" and (p == "/ask" or p.startswith("/ask/") or p == "/whereami" or p.endswith("/ask")):
+    if request.method == "POST" and (p == "/ask" or p.startswith("/ask/") or p in ("/whereami", "/voice") or p.endswith("/ask")):
         return True
     if p.startswith("/story/") or (p.startswith("/tours/") and p.endswith("/story")):
         return True
@@ -235,6 +236,7 @@ def config(data: DbData = Depends(get_data)) -> dict:
         "map_style": {"dark": settings.MAP_STYLE_DARK, "light": settings.MAP_STYLE_LIGHT},
         "bot_username": settings.BOT_USERNAME,
         "llm": bool(settings.ANTHROPIC_API_KEY),
+        "voice": bool(settings.STT_API_KEY),
         "presets": [{"id": "now", "label": "сейчас"}] + [{"id": k, "label": v["label"]} for k, v in PRESETS.items()],
         "attribution": ["© OpenStreetMap contributors"] + (["© 2ГИС"] if _has_dgis(data) else [])
                        + ["Weather: Open-Meteo", "Air: Open-Meteo, CAMS"],
@@ -562,6 +564,19 @@ async def whereami(photo: UploadFile = File(...), lang: str = Form("ru"), text: 
     return run_whereami(image, data, lang=lang, text=text)
 
 
+@app.post("/voice")
+async def voice(audio: UploadFile = File(...), lang: Literal["ru", "kk", "en"] = Form("ru")) -> dict:
+    """A spoken request -> its text (the Mini App's mic: Telegram's webview has no speech recognition)."""
+    from . import stt
+    if not stt.available():
+        raise HTTPException(503, "voice is off")
+    data = await audio.read(stt.MAX_BYTES + 1)
+    if len(data) > stt.MAX_BYTES:
+        raise HTTPException(413, "audio too long")
+    text = await asyncio.to_thread(stt.transcribe, data, audio.filename or "voice.webm", lang)
+    return {"text": text or ""}
+
+
 @app.get("/story/{place_id:path}")
 def place_story(place_id: str, lang: Literal["ru", "kk", "en"] = "ru", at: datetime | None = None,
                 data: DbData = Depends(get_data)) -> dict:
@@ -602,8 +617,8 @@ def pulse(at: datetime | None = None, data: DbData = Depends(get_data)) -> dict:
 
 # ------------------------------------------------------------------ Qydyr for the city (/app/city.html)
 @app.get("/city/scenarios")
-def city_scenarios() -> list[dict]:
-    return city.scenarios_view()
+def city_scenarios(data: DbData = Depends(get_data)) -> list[dict]:
+    return city.scenarios_view(data.conn)
 
 
 @app.get("/city/gaps")

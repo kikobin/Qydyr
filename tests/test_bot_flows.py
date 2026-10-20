@@ -133,6 +133,44 @@ def test_group_takes_the_place_from_a_reply(env):
     assert answer.startswith("<b>Mega Silk Way</b>") and "Бекнур: кофе" in answer
 
 
+def test_group_location_through_the_private_chat(env):
+    """Telegram has no "send location" button in groups: «📍 Моя геопозиция» opens the private chat, which has
+    one, and the point goes to the group's gathering. After "Где вы?" it picks at once."""
+    feed(env, message=msg("/go кофе", chat=GROUP))
+    g, gm = gathering(env)
+    geo = buttons(env.s.sent(SendMessage)[-1])[-1]
+    assert geo.url.endswith(f"?start=gl_{g.gid}")
+    tap(env, f"g:pick:{g.gid}", gm)
+    assert "Где вы?" in texts(env)[-1] and g.asked_place
+    feed(env, message=msg(f"/start gl_{g.gid}"))
+    assert "передам её в сбор группы" in texts(env)[-1]
+    n = len(env.s.calls)
+    feed(env, message=msg(location=Location(latitude=51.0900, longitude=71.4165)))
+    assert g.members[USER.id].lat == 51.09
+    sent = texts(env, n)
+    assert any("подобрал места" in x for x in sent) and any("Понял так" in x for x in sent)
+    feed(env, message=msg("/start gl_nope"))
+    assert "закончился" in texts(env)[-1]
+
+
+def test_voice_message_is_heard_and_answered(env, monkeypatch):
+    from qydyr_data import stt
+    monkeypatch.setattr(settings, "STT_API_KEY", "test")
+    monkeypatch.setattr(stt, "transcribe", lambda audio, name, lang: "я у Mega Silk Way, хочу кофе")
+    monkeypatch.setattr(env.qb.backend.__class__, "voice", lambda self, a, l: stt.transcribe(a, "v.ogg", l))
+
+    async def download(*a, **k):
+        k["destination"].write(b"OggS....")
+    monkeypatch.setattr(Bot, "download", download)
+    from aiogram.types import Voice
+    feed(env, message=msg(voice=Voice(file_id="v", file_unique_id="v", duration=4)))
+    sent = texts(env)
+    assert "🎙 «я у Mega Silk Way, хочу кофе»" in sent[-2] and sent[-1].startswith("<b>Mega Silk Way</b>")
+    monkeypatch.setattr(stt, "transcribe", lambda *a: None)
+    feed(env, message=msg(voice=Voice(file_id="v", file_unique_id="v", duration=4)))
+    assert "Не расслышал" in texts(env)[-1]
+
+
 def test_group_go_text_is_the_starters_wish(env, monkeypatch):
     asks, real = [], env.qb.backend.ask
     monkeypatch.setattr(env.qb.backend, "ask", lambda **b: asks.append(b) or real(**b))

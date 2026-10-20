@@ -94,10 +94,16 @@ class QydyrBot:
         return markup(answer_keyboard(ans, lang, private=private, webapp_url=self.webapp_url,
                                       bot_username=self.bot_username or None))
 
+    def geo_row(self, gid: str, lang: str) -> list[list[InlineKeyboardButton]]:
+        # Telegram has no "send location" button in groups: this one opens the private chat, which has it
+        if not self.bot_username:
+            return []
+        return [[InlineKeyboardButton(text=t(lang, "group_geo_btn"), url=f"https://t.me/{self.bot_username}?start=gl_{gid}")]]
+
     def group_kb(self, gid: str, n: int, lang: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=t(lang, "group_join", n=n), callback_data=f"g:in:{gid}"),
-            InlineKeyboardButton(text=t(lang, "group_pick"), callback_data=f"g:pick:{gid}")]])
+            InlineKeyboardButton(text=t(lang, "group_pick"), callback_data=f"g:pick:{gid}")], *self.geo_row(gid, lang)])
 
     # ------------------------------------------------------------- answers
     async def send_answer(self, m: Message, text: str, lang: str, *, lat=None, lon=None, surprise=False,
@@ -147,9 +153,17 @@ class QydyrBot:
                 s.lang = user_lang(m.from_user.language_code)
             s.pending = None
             s.set_context(None)
+            arg = (command.args or "").strip()
+            if arg.startswith("gl_"):        # "📍 Моя геопозиция" from a group: one thing to do here
+                g = self.state.get(arg[3:])
+                if g is None:
+                    await m.answer(t(s.lang, "group_geo_gone"))
+                    return
+                s.group_gid, s.group_at = g.gid, time.time()
+                await m.answer(t(s.lang, "group_geo_ask"), reply_markup=self.reply_kb(s.lang))
+                return
             await self.sticker(m.bot, m.chat.id, "hello")
             await m.answer(t(s.lang, "hello"), reply_markup=self.reply_kb(s.lang))
-            arg = (command.args or "").strip()
             if arg.startswith("t_"):
                 await self.send_tour(m, arg[2:], s.lang, s)
             elif arg.startswith("a_"):
@@ -201,6 +215,10 @@ class QydyrBot:
         async def location(m: Message) -> None:
             s = self.sess(m.from_user)
             lat, lon = m.location.latitude, m.location.longitude
+            gid = s.take_group()
+            if gid and (g := self.state.get(gid)):   # sent for a group's gathering, not for an answer here
+                await self.group_location(m, g, lat, lon, s.lang)
+                return
             if in_astana(lat, lon):
                 s.set_location(lat, lon)
                 handoff.remember(m.from_user.id, s.lat, s.lon)   # the Mini App opened from here knows it too
@@ -250,7 +268,30 @@ class QydyrBot:
 
         @r.message(F.voice | F.video_note | F.audio, private)
         async def voice(m: Message) -> None:
-            await m.answer(t(self.sess(m.from_user).lang, "voice_off"))
+            s = self.sess(m.from_user)
+            if not settings.STT_API_KEY and not settings.API_URL:
+                await m.answer(t(s.lang, "voice_off"))
+                return
+            media = m.voice or m.video_note or m.audio
+            if (media.duration or 0) > 90:
+                await m.answer(t(s.lang, "voice_long"))
+                return
+            await m.bot.send_chat_action(m.chat.id, ChatAction.TYPING)
+            buf = io.BytesIO()
+            await m.bot.download(media, destination=buf)
+            try:
+                text = await self.call(self.backend.voice, buf.getvalue(), s.lang)
+            except Exception as e:
+                log.warning("voice: %s", e)
+                text = None
+            if not text:
+                await m.answer(t(s.lang, "voice_fail"))
+                return
+            await m.answer(t(s.lang, "voice_heard", text=escape(text[:300])))
+            if text.lower().strip(" .!") in SURPRISE_WORDS:
+                await self.surprise(m)
+            else:
+                await self.ask_private(m, text)
 
         # ------------------------------------------------ group chats
         @r.message(Command("go"), group)
@@ -289,7 +330,7 @@ class QydyrBot:
                 return
             await self.refresh_gathering(m.bot, g)
             # the answer to "Где вы?": a location or "мы у Mega" — pick at once, no second tap on «Подобрать»
-            if (m.reply_to_message.message_id != g.message_id and not g.picking
+            if ((m.reply_to_message.message_id != g.message_id or g.asked_place) and not g.picking
                     and (m.location or (m.text and PLACE_HINT.search(m.text)))):
                 await self.pick(m.bot, g)
 
@@ -520,8 +561,12 @@ class QydyrBot:
             if len(text) < 3:
                 await q.answer([hint], cache_time=60, is_personal=True, button=button)
                 return
+            # where: the place in the words, else the point Telegram shares (BotFather /setinlinegeo), else the last
+            # location sent to the bot in private
+            loc = (q.location.latitude, q.location.longitude) if q.location else s.location() if s else None
+            where = {"lat": loc[0], "lon": loc[1]} if loc else {}
             try:
-                res = await self.call(self.backend.ask, text=text, lang=lang, format="structured", llm=False)
+                res = await self.call(self.backend.ask, text=text, lang=lang, format="structured", llm=False, **where)
             except Exception:
                 await q.answer([hint], cache_time=10, is_personal=True, button=button)
                 return
@@ -795,6 +840,16 @@ class QydyrBot:
         msg = await m.answer(t(lang, "group_start", where=where), reply_markup=self.group_kb(g.gid, len(g.members), lang))
         self.state.bind_message(g, msg.message_id)
 
+    async def group_location(self, m: Message, g, lat: float, lon: float, lang: str) -> None:
+        mem = g.members.setdefault(m.from_user.id, Member(name=m.from_user.first_name or t(g.lang, "member")))
+        mem.lat, mem.lon = round(lat, 3), round(lon, 3)
+        await self.refresh_gathering(m.bot, g)
+        if g.asked_place and not g.picking:
+            await m.answer(t(lang, "group_geo_picked"), reply_markup=self.reply_kb(lang))
+            await self.pick(m.bot, g)
+        else:
+            await m.answer(t(lang, "group_geo_done"), reply_markup=self.reply_kb(lang))
+
     async def refresh_gathering(self, bot: Bot, g) -> None:
         where = f" — {escape(g.text)}" if g.text else ""
         lines = [t(g.lang, "group_start", where=where)]
@@ -839,11 +894,15 @@ class QydyrBot:
                 if ans.get("anchor"):
                     break
             if not ans or not ans.get("anchor"):
-                msg = await bot.send_message(g.chat_id, t(g.lang, "group_need_place"))
+                g.asked_place = True
+                geo = self.geo_row(g.gid, g.lang)
+                msg = await bot.send_message(g.chat_id, t(g.lang, "group_need_place"),
+                                             reply_markup=InlineKeyboardMarkup(inline_keyboard=geo) if geo else None)
                 self.state.bind_prompt(g, msg.message_id)
                 return
             self.state.reset_poll(g)     # a new answer: votes for the old one no longer count
             g.answer = ans
+            g.asked_place = False
             text = answer_html(ans, g.lang)
             pts = g.points()
             if len(pts) >= 2 and ans["items"]:

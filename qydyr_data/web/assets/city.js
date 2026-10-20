@@ -1,24 +1,38 @@
 // "Qydyr для города": where typical requests find nothing nearby (the supply audit), what people look for and
-// do not find (live demand, counts only), and where the data comes from.
+// do not find (live demand, counts only), and where the data comes from. Written for a city official, not a dev:
+// every number comes with what it means.
 import { api } from "./api.js";
-import { LOGO } from "./icons.js";
+import { I, LOGO } from "./icons.js";
 import { ASTANA } from "./map.js";
 import * as maplibregl from "./vendor/maplibre-gl.mjs";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const n0 = (n) => (n ?? 0).toLocaleString("ru-RU");
-const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
+const pct = (a, b) => (b ? (a < b ? Math.min(99, Math.round((100 * a) / b)) : 100) : 0);   // 1 gap is never "100%"
 // 1 место, 2 места, 5 мест
 const plural = (n, [one, few, many]) => {
   const d = n % 10, h = n % 100;
   return d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many;
 };
-const COLORS = { none: "#FF7A7A", guess: "#B79CFF", far: "#FEC50C", ok: "#00AFCA" };
-const WEEKDAY = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const KV = ["квартал", "квартала", "кварталов"];
+const PL = ["место", "места", "мест"];
+const COLORS = { none: "#C8402B", guess: "#7E5BC2", far: "#D99A2B", ok: "#00788E" };
+const LEVEL = {
+  none: ["ничего нет", "ни одного подходящего открытого места в 15 минутах"],
+  far: ["только далеко", "ближайшее подходящее — дальше 15 минут пешком"],
+  guess: ["не подтверждено", "есть места, которые «вероятно» подходят, но в данных это не отмечено"],
+  ok: ["есть рядом", "хотя бы одно подходящее место в 15 минутах"],
+};
+const ICON = { kids_evening: "kid", work_quiet: "coffee", step_free: "wheel", night: "moon", frost: "snow", events: "event" };
+const WEEKDAY = ["в воскресенье", "в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу"];
 const SRC_KIND = { osm: "карта", catalog: "справочник", listing: "афиша", page: "сайт площадки", telegram: "Telegram", article_index: "подборки", manual: "вручную" };
+const NEED = { coffee: "кофе", food: "поесть", socket: "розетка", wifi: "Wi‑Fi", quiet: "тихо", kids: "с ребёнком", playground: "площадка",
+  interactive: "интерактив", museum: "музей", culture: "культура", park: "парк", walk: "прогулка", view: "красивый вид", unusual: "необычное",
+  night: "ночью", nightlife: "бар или клуб", free: "бесплатно", indoor: "под крышей", accessible: "без ступенек", romantic: "свидание",
+  photo: "фото", shopping: "шопинг", event: "события", cheap: "недорого", dog: "с собакой" };
 
-let map = null, gaps = null, scenarios = [], current = null;
+let map = null, gaps = null, scenarios = [], current = null, popup = null;
 
 // geohash -> [west, south, east, north]
 const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
@@ -36,86 +50,125 @@ function bbox(gh) {
   return [lon[0], lat[0], lon[1], lat[1]];
 }
 const cellPoly = (gh) => { const [w, s, e, n] = bbox(gh); return [[[w, s], [e, s], [e, n], [w, n], [w, s]]]; };
+const cellCenter = (gh) => { const [w, s, e, n] = bbox(gh); return [(w + e) / 2, (s + n) / 2]; };
 const local = (iso) => new Date(new Date(iso).getTime() + 5 * 3600000);   // Astana, UTC+5
-const when = (iso) => { if (!iso) return ""; const d = local(iso); return `${WEEKDAY[d.getUTCDay()]} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+const when = (iso) => { if (!iso) return ""; const d = local(iso); return `${WEEKDAY[d.getUTCDay()]} в ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
 const ago = (iso) => {
-  if (!iso) return "не запускался";
+  if (!iso) return "ещё не запускался";
   const h = Math.round((Date.now() - new Date(iso).getTime()) / 3600000);
   return h < 1 ? "меньше часа назад" : h < 48 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
 };
+const icon = (name, cls = "i") => (I[name] ? I[name](cls) : "");
 
-function where(r) { return r.label ? `«${r.label}»` : `ячейка ${r.cell}`; }
+const where = (r) => (r.label ? (/^(у|около) «/.test(r.label) ? `Квартал ${r.label}` : `Район «${r.label}»`) : "Квартал без названия");
 function gapLine(r) {
-  if (r.level === "none") return "ни одного подходящего варианта рядом";
-  if (r.level === "guess") return `только «вероятно»: ${r.best.map((b) => `«${b}»`).join(", ")} — в данных не отмечено`;
-  return `ближайший вариант — ${r.nearest_min} мин пешком${r.best.length ? `: «${r.best[0]}»` : ""}`;
+  if (r.level === "none") return "рядом ничего подходящего";
+  if (r.level === "guess") return `только «вероятно»: ${r.best.map((b) => `«${b}»`).join(", ")}`;
+  if (r.level === "far") return `ближайшее — ${r.nearest_min} мин пешком${r.best.length ? `: «${r.best[0]}»` : ""}`;
+  return `${r.nearest_min} мин пешком${r.best.length ? `: ${r.best.map((b) => `«${b}»`).join(", ")}` : ""}`;
 }
+const segs = (k, cls = "seg") => `<div class="${cls}" aria-hidden="true">${["ok", "far", "guess", "none"].map((lv) => k[lv]
+  ? `<span style="width:${(100 * k[lv]) / k.cells}%;background:${COLORS[lv]}${lv === "ok" ? ";opacity:.55" : ""}"></span>` : "").join("")}</div>`;
 
 // ---------------------------------------------------------------- the audit
 function renderScenarios() {
-  $("#scen").innerHTML = scenarios.map((s) => `<button type="button" data-s="${s.id}" aria-pressed="${s.id === current}">${esc(s.title)}</button>`).join("");
+  $("#scen").innerHTML = scenarios.map((s) => {
+    const k = s.summary;
+    const body = k && k.cells
+      ? `<span class="pct">${pct(k.ok, k.cells)}%<small>есть рядом</small></span>${segs(k)}<span class="bad">${k.none + k.far + k.guess
+        ? `${k.none + k.far + k.guess} ${plural(k.none + k.far + k.guess, KV)} без ответа рядом` : "везде есть ответ"}</span>`
+      : `<span class="bad">аудит ещё не запускался</span>`;
+    return `<button type="button" class="sc" data-s="${s.id}" aria-pressed="${s.id === current}"><span class="t">${icon(ICON[s.id])}${esc(s.title)}</span>${body}</button>`;
+  }).join("");
+}
+
+function headline() {
+  // the hero says the one finding worth remembering: the situation the city answers worst
+  const worst = scenarios.filter((s) => s.summary && s.summary.cells)
+    .map((s) => ({ s, bad: s.summary.none + s.summary.far + s.summary.guess }))
+    .sort((a, b) => b.bad / b.s.summary.cells - a.bad / a.s.summary.cells)[0];
+  if (!worst || !worst.bad) return;
+  const k = worst.s.summary;
+  $("#lead").innerHTML = `Мы задаём Qydyr обычные вопросы жителей из каждого квартала города и проверяем по реальным данным, есть ли ответ <b>в 15 минутах пешком</b>.
+    Хуже всего город отвечает на «${esc(worst.s.title.toLowerCase())}»: <b>в ${worst.bad} из ${k.cells} ${plural(k.cells, KV)}</b> рядом ничего подходящего.`;
 }
 
 function renderSide() {
   const g = gaps, s = g.scenario, k = g.summary;
   if (!k.cells) {
-    $("#side").innerHTML = `<span class="empty">Аудит ещё не запускался: <code>python -m qydyr_data audit</code></span>`;
+    $("#side").innerHTML = `<div class="card"><span class="empty">Аудит для этой ситуации ещё не запускался. Он считается раз в сутки после сбора данных.</span></div>`;
     return;
   }
-  const seg = (lv) => k[lv] ? `<span style="width:${(100 * k[lv]) / k.cells}%;background:${COLORS[lv]}${lv === "ok" ? ";opacity:.55" : ""}" title="${lv}"></span>` : "";
-  const bad = k.none + (k.guess || 0) + k.far;
+  const bad = k.none + k.guess + k.far;
+  const row = (lv) => (lv === "guess" && !k.guess ? "" : `<div class="row"><i class="dot" style="background:${COLORS[lv]}${lv === "ok" ? ";opacity:.55" : ""}"></i>
+    <span>${LEVEL[lv][0]}<small>${LEVEL[lv][1]}</small></span><em>${k[lv]}</em></div>`);
   $("#side").innerHTML = `
-    <h3>Запрос</h3>
-    <p class="req"><q>${esc(s.request)}</q><br><span class="when">${esc(when(s.at))} · из центра каждой ячейки · ${k.cells} ${plural(k.cells, ["ячейка", "ячейки", "ячеек"])}</span></p>
-    <p class="why">${esc(s.why)}</p>
-    <div class="stack" role="img" aria-label="${bad} из ${k.cells} ячеек без близкого подтверждённого ответа">${seg("none")}${seg("guess")}${seg("far")}${seg("ok")}</div>
-    <div class="counts"><span><b>${k.none}</b> ничего рядом</span>${k.guess ? `<span><b>${k.guess}</b> только «вероятно»</span>` : ""}<span><b>${k.far}</b> дальше 15 мин</span><span><b>${k.ok}</b> есть рядом</span></div>
-    <h3>Где хуже всего</h3>
-    ${g.top.length ? g.top.map((r) => `<div class="gap ${r.level}" data-cell="${r.cell}" role="button" tabindex="0"><b>${esc(where(r))}</b><span>${r.places} ${plural(r.places, ["место", "места", "мест"])} в ячейке · ${esc(gapLine(r))}</span></div>`).join("")
-      : `<span class="empty">Во всех ячейках есть близкий ответ.</span>`}`;
+    <div class="card">
+      <h3>Вопрос жителя</h3>
+      <p class="quote">«${esc(s.request)}»</p>
+      <div class="meta"><span class="pill">${icon("clock")}${esc(when(s.at))}</span><span class="pill">${icon("walk")}до 15 мин пешком</span></div>
+      <p class="why">${esc(s.why)}</p>
+    </div>
+    <div class="card">
+      <h3>Результат</h3>
+      <div class="big"><b>${pct(k.ok, k.cells)}%</b><span>кварталов с ответом рядом.<br>${bad ? `${bad} из ${k.cells} — без ответа.` : "Пробелов нет."}</span></div>
+      ${segs(k, "seg lg")}
+      <div class="rows">${row("none")}${row("far")}${row("guess")}${row("ok")}</div>
+    </div>
+    <div class="card">
+      <h3>Где хуже всего</h3>
+      <div class="worst">${g.top.length ? g.top.map((r, i) => `<button type="button" class="w" data-cell="${r.cell}">
+          <span class="k" style="background:${COLORS[r.level]}">${i + 1}</span>
+          <span><b>${esc(where(r))}</b><span>${esc(gapLine(r))} · ${r.places} ${plural(r.places, PL)} в квартале</span></span></button>`).join("")
+        : `<span class="empty">Во всех кварталах есть подходящее место рядом.</span>`}</div>
+    </div>`;
 }
 
 function drawCells() {
   if (!map || !map.getSource("gaps") || !gaps) return;
   map.getSource("gaps").setData({ type: "FeatureCollection", features: gaps.cells.map((r) => ({
-    type: "Feature", properties: { cell: r.cell, color: COLORS[r.level], op: r.level === "ok" ? 0.18 : 0.62 },
+    type: "Feature", properties: { cell: r.cell, color: COLORS[r.level], op: r.level === "ok" ? 0.16 : 0.55 },
     geometry: { type: "Polygon", coordinates: cellPoly(r.cell) } })) });
 }
 
-function focusCell(cell) {
-  const r = gaps.cells.find((x) => x.cell === cell);
-  if (!r || !map) return;
-  map.easeTo({ center: [r.lon, r.lat], zoom: 14, duration: 600 });
-  new maplibregl.Popup({ closeButton: false }).setLngLat([r.lon, r.lat])
-    .setHTML(`<b>${esc(where(r))}</b><br>${r.places} ${plural(r.places, ["место", "места", "мест"])} в ячейке<br>${esc(r.level === "ok" ? `подходит: ${r.best.map((b) => `«${b}»`).join(", ")} · ${r.nearest_min} мин` : gapLine(r))}`)
-    .addTo(map);
+function focusCell(cell, { fly = true } = {}) {
+  if (!map) return;
+  const r = gaps && gaps.cells.find((x) => x.cell === cell);
+  const at = r ? [r.lon, r.lat] : cellCenter(cell);
+  if (fly) {
+    map.easeTo({ center: at, zoom: 14, duration: 600 });
+    document.querySelector(".map-card").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  if (popup) popup.remove();
+  const html = r
+    ? `<b>${esc(where(r))}</b><span style="color:${COLORS[r.level]};font-weight:600">${LEVEL[r.level][0]}</span> · ${esc(gapLine(r))}<br><span style="color:var(--muted)">${r.places} ${plural(r.places, PL)} в квартале</span>`
+    : `<b>Этот квартал</b>`;
+  popup = new maplibregl.Popup({ closeButton: false, offset: 6 }).setLngLat(at).setHTML(html).addTo(map);
 }
 
 async function loadGaps(id) {
+  if (!id) return;
   current = id;
   renderScenarios();
-  try { gaps = await api.cityGaps(id); } catch (_) { $("#side").innerHTML = `<span class="empty">Не удалось загрузить аудит.</span>`; return; }
+  try { gaps = await api.cityGaps(id); } catch (_) { $("#side").innerHTML = `<div class="card"><span class="empty">Не удалось загрузить аудит.</span></div>`; return; }
   renderSide();
   drawCells();
+  if (popup) popup.remove();
+  try { history.replaceState(null, "", `?s=${id}`); } catch (_) { /* file:// */ }
 }
 
 // ---------------------------------------------------------------- live demand
-const NEED = { coffee: "кофе", food: "поесть", socket: "розетка", wifi: "Wi‑Fi", quiet: "тихо", kids: "с ребёнком", playground: "площадка",
-  interactive: "интерактив", museum: "музей", culture: "культура", park: "парк", walk: "прогулка", view: "вид", unusual: "необычное",
-  night: "ночью", nightlife: "бар/клуб", free: "бесплатно", indoor: "под крышей", accessible: "без ступенек", romantic: "свидание",
-  photo: "фото", shopping: "шопинг", event: "события", cheap: "недорого", dog: "с собакой" };
-
 async function loadDemand() {
   let d;
   try { d = await api.cityDemand(); } catch (_) { return; }
-  $("#k").textContent = d.k;
-  const max = Math.max(1, ...d.needs.map((x) => x.asked));
+  $("#k-note").textContent = `Квартал попадает сюда, когда в нём спросили хотя бы ${d.k} раза: так нельзя вычислить конкретного человека.`;
   $("#needs").innerHTML = d.needs.length ? d.needs.slice(0, 8).map((x) => `<div class="bar"><span>${esc(NEED[x.need] || x.label)}</span>
-      <span class="track" title="не нашли ${x.unmet} из ${x.asked}"><span class="fill bad" style="display:block;width:${(100 * x.unmet) / max}%"></span></span>
-      <em>${x.unmet} из ${x.asked}</em></div>`).join("")
-    : `<span class="empty">Пока мало запросов: ни одна ячейка не набрала ${d.k} одинаковых просьб без ответа.</span>`;
-  $("#live").innerHTML = d.live.length ? d.live.slice(0, 8).map((x) => `<div class="gap" style="cursor:default"><b>${esc(NEED[x.need] || x.need)}</b><span>ячейка ${esc(x.cell)} · ${x.n} ${plural(x.n, ["раз", "раза", "раз"])} не нашли</span></div>`).join("")
-    : `<span class="empty">За последние 3 часа все просьбы нашли ответ.</span>`;
+      <span class="track" title="не нашли ${x.unmet} из ${x.asked}"><span style="width:${pct(x.unmet, x.asked)}%;background:var(--c-none)"></span><span style="width:${100 - pct(x.unmet, x.asked)}%;background:var(--c-ok);opacity:.3"></span></span>
+      <em>не нашли ${x.unmet} из ${x.asked}</em></div>`).join("")
+    : `<span class="empty">Пока все частые просьбы находят ответ. Как только в каком-то квартале ${d.k} раза не найдут одно и то же, это появится здесь.</span>`;
+  $("#live").innerHTML = d.live.length ? d.live.slice(0, 6).map((x) => `<button type="button" class="live-row" data-cell="${x.cell}">
+      <b>${esc(NEED[x.need] || x.need)}</b><span>${esc(x.label ? where(x) : "квартал на карте")} · ${x.n} ${plural(x.n, ["раз", "раза", "раз"])} не нашли</span></button>`).join("")
+    : `<span class="empty">За последние 3 часа все запросы нашли ответ.</span>`;
 }
 
 // ---------------------------------------------------------------- the data
@@ -123,42 +176,64 @@ async function loadData() {
   let d;
   try { d = await api.cityData(); } catch (_) { return; }
   const p = d.places, e = d.events;
+  const feeds = d.sources.filter((s) => s.kind !== "osm" && s.kind !== "catalog" && s.items).length;
   const kpis = [
-    [n0(p.n), `${plural(p.n, ["место", "места", "мест"])} из OpenStreetMap${p.dgis_new ? " и 2ГИС" : ""}`],
-    [n0(e.n), `${plural(e.n, ["событие", "события", "событий"])} из ${d.sources.filter((s) => s.kind !== "osm" && s.items).length} афиш и сайтов`],
-    [`${pct(p.with_hours, p.n)}%`, "мест с часами работы — остальным пишем «часы неизвестны»", pct(p.with_hours, p.n) < 50],
-    [`${pct(p.with_wheelchair, p.n)}%`, "мест с отметкой о доступности для колясок", pct(p.with_wheelchair, p.n) < 30],
-    ...(p.with_rating ? [[n0(p.with_rating), `${plural(p.with_rating, ["место", "места", "мест"])} с рейтингом и отзывами 2ГИС`]] : []),
-    [n0(d.tours.facts), `${plural(d.tours.facts, ["факт", "факта", "фактов"])} в ${d.tours.n} прогулках, у каждого — ссылка на источник`],
+    ["pin", n0(p.n), `${plural(p.n, PL)} на карте: OpenStreetMap${p.dgis_new ? ` и ещё ${n0(p.dgis_new)} из 2ГИС` : ""}`],
+    ["event", n0(e.n), `${plural(e.n, ["событие", "события", "событий"])} из ${feeds} афиш и сайтов площадок`],
+    ["clock", `${pct(p.with_hours, p.n)}%`, "мест с часами работы: Qydyr знает, открыто ли сейчас"],
+    ["star", n0(p.with_rating), `${plural(p.with_rating, PL)} с рейтингом и отзывами 2ГИС`],
+    ["wheel", `${pct(p.with_wheelchair, p.n)}%`, "мест с отметкой, можно ли проехать на коляске"],
+    ["flag", n0(d.tours.facts), `${plural(d.tours.facts, ["факт", "факта", "фактов"])} в ${d.tours.n} прогулках с гидом, у каждого — ссылка на источник`],
   ];
-  $("#kpis").innerHTML = kpis.map(([b, s, warn]) => `<div class="kpi${warn ? " warn" : ""}"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");
+  $("#kpis").innerHTML = kpis.map(([ic, b, s]) => `<div class="kpi"><span class="ic">${icon(ic)}</span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></div>`).join("");
   const bars = [
-    ["часы работы", p.with_hours, p.n], ["доступность", p.with_wheelchair, p.n], ["телефон или сайт", p.with_contacts, p.n],
-    ...(p.with_rating ? [["рейтинг 2ГИС", p.with_rating, p.n]] : []),
-    ["событие на карте", e.with_place + e.geocoded, e.n], ["дата подтверждена цитатой", e.evidence_ok, e.n],
+    ["Часы работы", "чтобы не вести в закрытое", p.with_hours, p.n],
+    ["Рейтинг 2ГИС", "чтобы советовать хорошее", p.with_rating || 0, p.n],
+    ["Доступность", "для колясок и родителей", p.with_wheelchair, p.n],
+    ["Телефон или сайт", "чтобы уточнить", p.with_contacts, p.n],
+    ["Событие на карте", "знаем, где оно идёт", e.with_place + e.geocoded, e.n],
+    ["Дата с цитатой", "проверено по источнику", e.evidence_ok, e.n],
   ];
-  $("#coverage").innerHTML = bars.map(([l, a, b]) => `<div class="bar"><span>${esc(l)}</span><span class="track"><span class="fill${pct(a, b) < 30 ? " bad" : ""}" style="display:block;width:${pct(a, b)}%"></span></span><em>${pct(a, b)}%</em></div>`).join("")
-    + `<p class="why">Вручную уточнено ${d.curated.places} ${plural(d.curated.places, ["место", "места", "мест"])}: как их называют люди («Чупа-чупс», «Пирамида»), часы ${d.curated.with_hours} ключевых мест — с официальных сайтов.${p.dgis_enriched + p.dgis_new ? ` Из 2ГИС: часы ${p.hours_2gis} мест, доступность ${p.wheelchair_2gis}, Wi‑Fi ${p.wifi_2gis}, ${p.dgis_new} новых мест, которых нет в OSM.` : ""} Событий: ${e.jsonld} из разметки schema.org, ${e.llm} прочитал Claude, ${e.telegram} из Telegram.</p>`;
-  $("#schedule").innerHTML = `<ul class="plain">${d.schedule.map((s) => `<li><b>${esc(s.what)}</b> — ${esc(s.when)}</li>`).join("")}<li><b>Погода и воздух</b> — ${esc(d.weather)}</li></ul>
-    <p class="muted" style="margin:10px 0 0">База обновлена: места ${esc(ago(p.fetched_at))}, события ${esc(ago(e.last_seen_at))}.</p>`;
-  $("#sources").innerHTML = `<table><thead><tr><th>Источник</th><th>Тип</th><th style="text-align:right">В базе</th><th>Последний сбор</th></tr></thead><tbody>${
-    d.sources.map((s) => `<tr><td>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)}</td>
-      <td class="muted">${esc(SRC_KIND[s.kind] || s.kind)}</td>
-      <td class="cnt${s.items ? "" : " zero"}">${n0(s.items)} <span class="muted">${esc(s.unit)}</span></td>
-      <td class="muted">${esc(ago(s.last_run_at))}${s.status && s.status.startsWith("error") ? " · ошибка" : ""}</td></tr>`).join("")}</tbody></table>`;
+  $("#coverage").innerHTML = bars.map(([l, sub, a, b]) => {
+    const v = pct(a, b);
+    return `<div class="bar"><span>${esc(l)}<small>${esc(sub)}</small></span><span class="track"><span style="width:${v}%;background:${v < 30 ? "var(--c-none)" : v < 60 ? "var(--c-far)" : "var(--c-ok)"}"></span></span><em>${v}%</em></div>`;
+  }).join("");
+  $("#cov-note").textContent = `Вручную уточнено ${d.curated.places} ${plural(d.curated.places, PL)}: как их называют люди («Чупа-чупс», «Пирамида»).`
+    + (p.dgis_enriched + p.dgis_new ? ` Из 2ГИС: часы ${n0(p.hours_2gis)} мест, доступность ${n0(p.wheelchair_2gis)}, Wi‑Fi ${n0(p.wifi_2gis)}.` : "")
+    + ` События: ${e.jsonld} из разметки сайтов, ${e.llm} прочитал Claude, ${e.telegram} из Telegram.`;
+  const SCHED_IC = ["map", "event", "target"];
+  $("#schedule").innerHTML = `<ul class="sched">${d.schedule.map((s, i) => `<li><span class="ic">${icon(SCHED_IC[i] || "clock")}</span><span><b>${esc(s.what)}</b><small>${esc(s.when)}</small></span></li>`).join("")}
+    <li><span class="ic">${icon("sun")}</span><span><b>Погода и воздух</b><small>${esc(d.weather)}</small></span></li></ul>
+    <p class="note">Сейчас: места обновлены ${esc(ago(p.fetched_at))}, события ${esc(ago(e.last_seen_at))}.</p>`;
+  const live = d.sources.filter((s) => s.items), idle = d.sources.filter((s) => !s.items);
+  $("#src-sum").textContent = `${live.length} работают${idle.length ? ` · ${idle.length} пока без данных` : ""}`;
+  const row = (s) => `<div class="src-row"><span>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)}<span class="tag">${esc(SRC_KIND[s.kind] || s.kind)}</span></span>
+      <b>${n0(s.items)} ${esc(s.unit.split(":")[0])}</b><small>обновлено ${esc(ago(s.last_run_at))}${s.status && s.status.startsWith("error") ? ' · <span class="err">ошибка при последнем сборе</span>' : ""}</small></div>`;
+  $("#sources").innerHTML = live.map(row).join("") + (idle.length ? `<p class="note">Пока без событий: ${idle.map((s) => esc(s.title)).join(", ")}.</p>` : "");
+}
+
+function renderPrivacy() {
+  $("#priv").innerHTML = [
+    ["shield", "Аудит — без людей", "Это вопросы, которые Qydyr задаёт сам. Личных данных в нём нет."],
+    ["lock", "Спрос — только счётчики", "День, квартал ~1 км и тип просьбы. Текст, точные координаты и аккаунты не храним."],
+    ["people", "Никого не выделить", "Квартал показываем, только когда в нём спросили хотя бы 3 раза. «Последние 3 часа» живут лишь в памяти сервера."],
+    ["warning", "Без додумывания", "Если в данных не отмечено, что место открыто или доступно, мы так и пишем: «неизвестно» или «вероятно»."],
+  ].map(([ic, b, t]) => `<div>${icon(ic)}<b>${esc(b)}</b>${esc(t)}</div>`).join("");
 }
 
 // ---------------------------------------------------------------- start
 async function start() {
   $("#logo").innerHTML = LOGO;
-  let cfg = { map_style: { dark: "" } };
+  renderPrivacy();
+  let cfg = { map_style: { light: "" } };
   try { cfg = await api.config(); } catch (_) { /* offline */ }
-  map = new maplibregl.Map({ container: "cmap", style: cfg.map_style.dark || { version: 8, sources: {}, layers: [] }, center: ASTANA, zoom: 11.2,
+  map = new maplibregl.Map({ container: "cmap", style: cfg.map_style.light || { version: 8, sources: {}, layers: [] }, center: ASTANA, zoom: 11.2,
                              attributionControl: false, cooperativeGestures: true });
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "© OpenStreetMap contributors" }));
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   // no basemap (blocked CDN, venue Wi-Fi): the cells on a plain background instead of an empty map
   let styled = false;
-  const plain = () => { if (!styled) { styled = true; map.setStyle({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#1B1612" } }] }); } };
+  const plain = () => { if (!styled) { styled = true; map.setStyle({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#EDE3D2" } }] }); } };
   const fallback = setTimeout(plain, 3500);
   map.on("error", () => { if (!styled) plain(); });
   map.on("style.load", () => {
@@ -167,11 +242,11 @@ async function start() {
     if (!map.getSource("gaps")) {
       map.addSource("gaps", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "gaps-fill", type: "fill", source: "gaps", paint: { "fill-color": ["get", "color"], "fill-opacity": ["get", "op"] } });
-      map.addLayer({ id: "gaps-line", type: "line", source: "gaps", paint: { "line-color": ["get", "color"], "line-opacity": 0.8, "line-width": 1 } });
+      map.addLayer({ id: "gaps-line", type: "line", source: "gaps", paint: { "line-color": ["get", "color"], "line-opacity": 0.7, "line-width": 1 } });
     }
     drawCells();
   });
-  map.on("click", "gaps-fill", (ev) => focusCell(ev.features[0].properties.cell));
+  map.on("click", "gaps-fill", (ev) => focusCell(ev.features[0].properties.cell, { fly: false }));
   map.on("mouseenter", "gaps-fill", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "gaps-fill", () => { map.getCanvas().style.cursor = ""; });
 
@@ -181,12 +256,9 @@ async function start() {
     const g = e.target.closest("[data-cell]");
     if (g) focusCell(g.dataset.cell);
   });
-  document.addEventListener("keydown", (e) => {
-    const g = e.target.closest && e.target.closest("[data-cell]");
-    if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); focusCell(g.dataset.cell); }
-  });
 
   try { scenarios = await api.cityScenarios(); } catch (_) { scenarios = []; }
+  headline();
   const wanted = new URLSearchParams(location.search).get("s");
   await Promise.all([loadGaps(scenarios.some((s) => s.id === wanted) ? wanted : (scenarios[0] || {}).id), loadDemand(), loadData()]);
   setInterval(loadDemand, 15000);

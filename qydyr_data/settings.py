@@ -42,6 +42,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 DB_CONNECT_TIMEOUT_S = int(os.getenv("QYDYR_DB_CONNECT_TIMEOUT", "10"))
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DGIS_API_KEY = os.getenv("QYDYR_DGIS_KEY") or os.getenv("DGIS_API_KEY")   # 2ГИС Places API: hours, ratings, more places
+# voice requests: Whisper behind an OpenAI-compatible API (Groq's free tier by default; OpenAI works too)
+STT_API_KEY = os.getenv("QYDYR_STT_KEY") or os.getenv("GROQ_API_KEY")
+STT_URL = os.getenv("QYDYR_STT_URL", "https://api.groq.com/openai/v1")
+STT_MODEL = os.getenv("QYDYR_STT_MODEL", "whisper-large-v3-turbo")
 # Haiku 5.5: high-volume extraction and request understanding. Sonnet 5.5: translations, photos.
 CLAUDE_MODEL = os.getenv("QYDYR_CLAUDE_MODEL", "claude-haiku-5-5")
 CLAUDE_MODEL_SMART = os.getenv("QYDYR_CLAUDE_MODEL_SMART", "claude-sonnet-5-5")

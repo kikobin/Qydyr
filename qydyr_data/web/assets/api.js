@@ -18,6 +18,16 @@ async function call(method, path, body) {
 
 export const api = {
   config: () => call("GET", "/config"),
+  // a recorded request -> its words (the server runs Whisper: Telegram's webview has no speech recognition)
+  voice: async (blob, lang) => {
+    const fd = new FormData();
+    fd.append("audio", blob, `voice.${(blob.type.split("/")[1] || "webm").split(";")[0]}`);
+    fd.append("lang", lang);
+    const init = initData();
+    const r = await fetch(BASE + "/voice", { method: "POST", body: fd, headers: init ? { "X-Telegram-Init-Data": init } : {} });
+    if (!r.ok) { const err = new Error(`${r.status} /voice`); err.status = r.status; throw err; }
+    return r.json();
+  },
   ask: (body) => call("POST", "/ask", { format: "structured", ...body }),
   answer: (id) => call("GET", `/answer/${encodeURIComponent(id)}`),
   walks: (q) => call("GET", `/walks?${new URLSearchParams(q)}`),

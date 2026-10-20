@@ -116,6 +116,24 @@ def test_follow_up_and_the_location_from_the_chat(db, sample_places, monkeypatch
         app.dependency_overrides.clear()
 
 
+def test_voice_is_turned_into_text(monkeypatch):
+    from qydyr_data import stt
+    c = TestClient(app)
+    monkeypatch.setattr(settings, "STT_API_KEY", None)
+    assert c.post("/voice", files={"audio": ("v.webm", b"x" * 2000, "audio/webm")}).status_code == 503
+    monkeypatch.setattr(settings, "STT_API_KEY", "k")
+    seen = {}
+
+    def fake(audio, name, lang):
+        seen.update(n=len(audio), name=name, lang=lang)
+        return "кофе у Байтерека"
+    monkeypatch.setattr(stt, "transcribe", fake)
+    r = c.post("/voice", files={"audio": ("v.webm", b"x" * 2000, "audio/webm")}, data={"lang": "kk"}).json()
+    assert r == {"text": "кофе у Байтерека"} and seen == {"n": 2000, "name": "v.webm", "lang": "kk"}
+    big = b"x" * (stt.MAX_BYTES + 1)
+    assert c.post("/voice", files={"audio": ("v.webm", big, "audio/webm")}).status_code == 413
+
+
 def test_translate_answer_fields():
     calls = []
 

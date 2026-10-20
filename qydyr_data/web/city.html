@@ -1,125 +1,232 @@
 <!doctype html>
-<html lang="ru" data-theme="dark">
+<html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qydyr для города</title>
+<meta name="description" content="Где Астана не отвечает на обычные запросы жителей: аудит по кварталам ~1 км, живой спрос и источники данных.">
 <link rel="stylesheet" href="assets/fonts.css">
 <link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/tokens.css">
 <style>
-  body { overflow: auto; background: var(--bg); }
-  :root { --none: #E5735A; --guess: #B79CFF; --far: var(--gold); --ok: var(--sky); }
-  .city { max-width: 1320px; margin: 0 auto; padding: 28px 24px 56px; display: flex; flex-direction: column; gap: 28px; }
-  .c-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
-  .c-title { display: flex; align-items: center; gap: 16px; min-width: 0; }
-  .c-title .logo { width: 48px; height: 48px; flex-shrink: 0; }
-  .c-title h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: clamp(24px, 3vw, 36px); letter-spacing: -0.02em; }
-  .c-title p { margin: 4px 0 0; color: var(--text-2); font-size: 15px; }
-  .links { display: flex; gap: 10px; flex-wrap: wrap; }
-  .links a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text); text-decoration: none; font-size: 14px; }
-  .links a:hover { border-color: var(--sky); }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
-  .kpi b { font-family: var(--font-display); font-weight: 600; font-size: 26px; }
-  .kpi span { font-size: 13px; color: var(--text-2); line-height: 1.35; }
-  .kpi.warn b { color: var(--far); }
-  section h2 { margin: 0 0 6px; font-family: var(--font-display); font-weight: 600; font-size: clamp(19px, 2vw, 24px); letter-spacing: -0.01em; }
-  section > p.lead { margin: 0 0 16px; color: var(--text-2); font-size: 15px; line-height: 1.5; max-width: 860px; }
-  .scen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  .scen button { min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
-  .scen button[aria-pressed="true"] { background: var(--sky); color: var(--sky-ink); border-color: var(--sky); font-weight: 600; }
-  .audit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; }
-  .c-map { position: relative; min-height: 520px; border-radius: 24px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
+  :root { --c-none: #C8402B; --c-guess: #7E5BC2; --c-far: #D99A2B; --c-ok: #00788E; --wrap: 1180px; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 400 15px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  svg.i { flex-shrink: 0; }
+  a { color: inherit; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 24px; }
+  .muted { color: var(--muted); }
+  svg.i { width: 20px; height: 20px; }
+
+  /* top bar */
+  .top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; }
+  .brand .logo { width: 30px; height: 30px; }
+  .brand small { color: var(--muted); font-weight: 400; }
+  .nav { display: flex; gap: 8px; }
+  .nav a { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px; border-radius: 999px; text-decoration: none; font-size: 14px; border: 1px solid var(--line); background: var(--surface); }
+  .nav a.cta { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 600; }
+
+  /* hero */
+  .hero { padding: 48px 0 28px; display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 32px; align-items: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pin); }
+  h1 { margin: 10px 0 14px; font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 52px); line-height: 1.08; letter-spacing: -0.02em; }
+  .hero p.lead { margin: 0; font-size: clamp(16px, 1.6vw, 19px); line-height: 1.55; color: var(--muted); max-width: 720px; }
+  .hero p.lead b { color: var(--ink); font-weight: 600; }
+  .hero img { width: 100%; max-width: 220px; justify-self: center; }
+
+  /* how */
+  .how { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 8px 0 44px; }
+  .step { display: flex; gap: 14px; padding: 18px; border-radius: 20px; background: var(--surface); box-shadow: var(--card-shadow); }
+  .step .n { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--gold-soft); color: var(--tip-ink); font-weight: 700; font-family: var(--serif); }
+  .step b { display: block; margin-bottom: 4px; font-size: 15px; }
+  .step span { font-size: 14px; line-height: 1.45; color: var(--muted); }
+
+  section.block { margin: 0 0 56px; }
+  .sec-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  h2 { margin: 0; font-family: var(--serif); font-weight: 600; font-size: clamp(24px, 2.6vw, 32px); letter-spacing: -0.01em; }
+  .sec-head p { margin: 6px 0 0; color: var(--muted); font-size: 15px; line-height: 1.5; max-width: 720px; }
+
+  /* scenario cards: the selector and the summary at once */
+  .scen { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .sc { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 18px; background: var(--surface); box-shadow: var(--card-shadow); transition: transform .15s, box-shadow .15s; }
+  .sc:hover { transform: translateY(-2px); }
+  .sc:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+  .sc[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink), 0 6px 18px #6b4b2420; }
+  .sc .t { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; line-height: 1.2; }
+  .sc .t svg { color: var(--pin); width: 18px; height: 18px; }
+  .sc .pct { font-family: var(--serif); font-size: 26px; font-weight: 600; line-height: 1; }
+  .sc .pct small { font-family: var(--font); font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .seg { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-2); }
+  .seg span { display: block; height: 100%; }
+  .sc .bad { font-size: 12px; color: var(--muted); }
+
+  /* map + side */
+  .audit { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; }
+  .map-card { position: relative; min-height: 560px; border-radius: 24px; overflow: hidden; box-shadow: var(--card-shadow); background: var(--surface-2); }
   #cmap { position: absolute; inset: 0; }
-  .legend { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border-radius: 14px; background: var(--overlay); border: 1px solid var(--line); font-size: 12px; }
-  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
-  .panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
-  .panel h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
-  .req { font-size: 15px; line-height: 1.45; }
-  .req q { font-weight: 600; }
-  .req .when { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
-  .stack { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--card); }
-  .stack span { display: block; height: 100%; }
-  .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; font-size: 13px; color: var(--text-2); }
-  .counts b { color: var(--text); font-family: var(--font-mono); font-weight: 500; }
-  .gap { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 14px; background: var(--card); border-left: 4px solid var(--none); cursor: pointer; }
-  .gap.far { border-left-color: var(--far); }
-  .gap.guess { border-left-color: var(--guess); }
-  .gap b { font-size: 14px; }
-  .gap span { font-size: 13px; color: var(--text-2); line-height: 1.35; }
-  .why { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.45; }
-  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-  .bar { display: grid; grid-template-columns: 150px minmax(0, 1fr) 70px; align-items: center; gap: 10px; font-size: 14px; }
-  .bar .track { height: 10px; border-radius: 5px; background: var(--card); overflow: hidden; }
-  .bar .fill { height: 100%; background: var(--sky); }
-  .bar .fill.bad { background: var(--none); }
-  .bar em { font-style: normal; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); text-align: right; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
-  td.cnt { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
-  td a { color: var(--text); }
-  td .muted, .muted { color: var(--text-3); font-size: 12px; }
-  .zero { color: var(--far); }
-  .table-wrap { overflow-x: auto; }
-  ul.plain { margin: 0; padding-left: 18px; color: var(--text-2); line-height: 1.6; font-size: 14px; }
-  .empty { color: var(--text-3); font-size: 14px; }
-  .maplibregl-popup-content { font-size: 13px; line-height: 1.4; max-width: 260px; }
-  @media (max-width: 980px) { .audit-grid, .two { grid-template-columns: 1fr; } .c-map { min-height: 420px; } .bar { grid-template-columns: 110px minmax(0, 1fr) 64px; } }
-  @media (max-width: 520px) { .city { padding: 20px 16px 40px; gap: 22px; } .kpi { padding: 14px; } .kpi b { font-size: 22px; } .c-title .logo { width: 40px; height: 40px; } }
+  .legend { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 2; display: flex; gap: 6px 14px; flex-wrap: wrap; padding: 10px 14px; border-radius: 14px; background: var(--overlay); box-shadow: var(--card-shadow); font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+  .hint { position: absolute; top: 12px; left: 12px; z-index: 2; padding: 6px 12px; border-radius: 999px; background: var(--overlay); box-shadow: var(--card-shadow); font-size: 13px; color: var(--muted); }
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .card { padding: 18px; border-radius: 22px; background: var(--surface); box-shadow: var(--card-shadow); min-width: 0; }
+  .card h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .quote { margin: 0 0 6px; font-family: var(--serif); font-size: 19px; line-height: 1.35; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+  .pill svg { width: 14px; height: 14px; }
+  .why { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+  .big { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .big b { font-family: var(--serif); font-size: 44px; font-weight: 600; line-height: 1; }
+  .big span { font-size: 14px; color: var(--muted); line-height: 1.35; }
+  .seg.lg { height: 12px; border-radius: 6px; margin-bottom: 12px; }
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 10px; align-items: start; font-size: 14px; line-height: 1.35; }
+  .row .dot { margin-top: 3px; }
+  .row small { display: block; color: var(--muted); font-size: 12px; }
+  .row em { font-style: normal; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .worst { display: flex; flex-direction: column; gap: 8px; }
+  .w { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--bg); }
+  .w:hover, .w:focus-visible { background: var(--surface-2); }
+  .w .k { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 700; }
+  .w b { display: block; font-size: 14px; }
+  .w span { font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .empty { color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+  /* demand */
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .bar { display: grid; grid-template-columns: minmax(90px, 140px) minmax(0, 1fr) auto; align-items: center; gap: 12px; font-size: 14px; }
+  .bar + .bar { margin-top: 10px; }
+  .track { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; display: flex; }
+  .track span { display: block; height: 100%; }
+  .bar em { font-style: normal; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .live-row { all: unset; box-sizing: border-box; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--bg); font-size: 14px; width: 100%; }
+  .live-row + .live-row { margin-top: 8px; }
+  .live-row span { color: var(--muted); font-size: 13px; }
+  .note { margin: 12px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* data */
+  .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: 20px; background: var(--surface); box-shadow: var(--card-shadow); }
+  .kpi .ic { flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--live-soft); color: var(--sky); }
+  .kpi b { display: block; font-family: var(--serif); font-size: 26px; font-weight: 600; line-height: 1.1; }
+  .kpi span { font-size: 13px; color: var(--muted); line-height: 1.4; }
+  .cov .bar { grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) 44px; }
+  .cov .bar em { text-align: right; color: var(--ink); font-weight: 600; }
+  .cov small { display: block; font-size: 12px; color: var(--muted); }
+  .sched { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .sched li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; font-size: 14px; line-height: 1.4; }
+  .sched .ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--gold-soft); color: var(--tip-ink); }
+  .sched small { display: block; color: var(--muted); font-size: 13px; }
+  details.src { margin-top: 16px; }
+  details.src summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-radius: 20px; background: var(--surface); box-shadow: var(--card-shadow); font-weight: 600; }
+  details.src summary::-webkit-details-marker { display: none; }
+  details.src summary span { font-weight: 400; color: var(--muted); font-size: 14px; }
+  details.src[open] summary { border-radius: 20px 20px 0 0; }
+  .src-list { padding: 4px 18px 14px; border-radius: 0 0 20px 20px; background: var(--surface); box-shadow: var(--card-shadow); }
+  .src-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .src-row:last-child { border-bottom: 0; }
+  .src-row small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+  .src-row b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .src-row a { text-decoration: none; }
+  .src-row a:hover { text-decoration: underline; }
+  .tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); font-size: 11px; color: var(--muted); vertical-align: 1px; }
+  .err { color: var(--warn); }
+
+  /* privacy */
+  .priv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .priv div { padding: 16px; border-radius: 20px; background: var(--surface); box-shadow: var(--card-shadow); font-size: 14px; line-height: 1.45; color: var(--muted); }
+  .priv svg { width: 22px; height: 22px; color: var(--sky); margin-bottom: 8px; }
+  .priv b { display: block; color: var(--ink); margin-bottom: 4px; }
+  footer { padding: 24px 0 48px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); }
+
+  .maplibregl-popup-content { font: 13px/1.45 var(--font); color: var(--ink); background: var(--surface); border-radius: 14px; padding: 10px 12px; max-width: 260px; box-shadow: var(--float-shadow); }
+  .maplibregl-popup-tip { border-top-color: var(--surface) !important; border-bottom-color: var(--surface) !important; }
+  .maplibregl-popup-content b { display: block; margin-bottom: 2px; }
+
+  @media (max-width: 1080px) { .scen { grid-template-columns: repeat(3, minmax(0, 1fr)); } .audit { grid-template-columns: 1fr; } .priv { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px) {
+    .wrap { padding: 0 16px; }
+    .hero { grid-template-columns: 1fr; padding-top: 28px; gap: 8px; } .hero img { display: none; }
+    .how, .two { grid-template-columns: 1fr; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi { flex-direction: column; gap: 8px; padding: 14px; }
+    .scen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .map-card { min-height: 420px; }
+    .nav a:not(.cta) { display: none; }
+    .brand small { display: none; }
+    .priv { grid-template-columns: 1fr; }
+    .legend { font-size: 12px; }
+  }
 </style>
 <script type="module" src="assets/city.js"></script>
 </head>
 <body>
-<main class="city">
-  <header class="c-head">
-    <div class="c-title"><span id="logo"></span><div><h1>Qydyr для города</h1><p>Где Астана не отвечает на обычные запросы жителей — по реальным данным, ячейками ~1 км</p></div></div>
-    <nav class="links"><a href="./">Открыть Qydyr</a><a href="pulse.html">Пульс Астаны</a></nav>
-  </header>
+<header class="top"><div class="wrap">
+  <a class="brand" href="./"><span id="logo"></span>Qydyr <small>· для города</small></a>
+  <nav class="nav"><a href="pulse.html">Пульс Астаны</a><a class="cta" href="./">Открыть Qydyr</a></nav>
+</div></header>
 
-  <section class="kpis" id="kpis" aria-label="Коротко"><div class="kpi"><b>—</b><span>загружаю…</span></div></section>
+<main class="wrap">
+  <section class="hero">
+    <div>
+      <span class="eyebrow">Аудит города · Астана</span>
+      <h1>Где жителю Астаны некуда пойти</h1>
+      <p class="lead" id="lead">Мы задаём Qydyr обычные вопросы жителей из каждого квартала города и проверяем по реальным данным, есть ли ответ <b>в 15 минутах пешком</b>. Так видно, где городу не хватает мест.</p>
+    </div>
+    <img src="assets/art/suyrbek-map.webp" alt="" width="220" height="351" decoding="async">
+  </section>
 
-  <section aria-labelledby="h-audit">
-    <h2 id="h-audit">Чего не хватает городу</h2>
-    <p class="lead">Qydyr сам задаёт типовой запрос из центра каждой ячейки ~1 км, где есть хотя бы 3 места, и смотрит, что реально подходит по нашей базе: открыто ли в это время, успеет ли человек дойти, отвечает ли место на просьбу. Красное — ничего, жёлтое — только далеко, фиолетовое — только «вероятно», без подтверждения в данных.</p>
-    <div class="scen" id="scen" role="group" aria-label="Сценарий"></div>
-    <div class="audit-grid">
-      <div class="c-map"><div id="cmap" role="img" aria-label="Карта пробелов по ячейкам"></div>
-        <div class="legend"><span><i style="background:var(--none)"></i>ничего рядом</span><span><i style="background:var(--guess)"></i>только «вероятно»</span><span><i style="background:var(--far)"></i>дальше 15 мин</span><span><i style="background:var(--ok);opacity:.55"></i>есть рядом</span></div>
+  <div class="how" aria-label="Как считаем">
+    <div class="step"><span class="n">1</span><div><b>Делим город на кварталы</b><span>Квадраты примерно 1×1 км. Берём только те, где есть хотя бы 3 места.</span></div></div>
+    <div class="step"><span class="n">2</span><div><b>Спрашиваем как житель</b><span>Из центра каждого квартала: «с ребёнком вечером», «тихо поработать», «ночью»…</span></div></div>
+    <div class="step"><span class="n">3</span><div><b>Проверяем ответ</b><span>Открыто ли в это время, дойдёт ли человек за 15 минут, подходит ли место по данным.</span></div></div>
+  </div>
+
+  <section class="block" aria-labelledby="h-audit">
+    <div class="sec-head"><div><h2 id="h-audit">Чего не хватает</h2><p>Выберите ситуацию. Процент — доля кварталов, где хороший ответ есть рядом.</p></div></div>
+    <div class="scen" id="scen" role="group" aria-label="Ситуация"></div>
+    <div class="audit">
+      <div class="map-card">
+        <div id="cmap" role="img" aria-label="Карта кварталов"></div>
+        <span class="hint">Нажмите на квартал</span>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--c-none)"></i>ничего нет</span>
+          <span><i class="dot" style="background:var(--c-far)"></i>только далеко</span>
+          <span><i class="dot" style="background:var(--c-guess)"></i>не подтверждено</span>
+          <span><i class="dot" style="background:var(--c-ok);opacity:.45"></i>есть рядом</span>
+        </div>
       </div>
-      <aside class="panel" id="side"><span class="empty">загружаю аудит…</span></aside>
+      <div class="side" id="side"><div class="card"><span class="empty">Загружаю аудит…</span></div></div>
     </div>
   </section>
 
-  <section aria-labelledby="h-demand">
-    <h2 id="h-demand">Ищут и не находят</h2>
-    <p class="lead">Живые запросы к Qydyr — только как счётчики: ячейка ~1 км, понятая просьба и день. Без текста, координат и людей. Ячейка появляется, когда в ней спросили хотя бы <span id="k">3</span> раза: так никто не выделяется.</p>
+  <section class="block" aria-labelledby="h-demand">
+    <div class="sec-head"><div><h2 id="h-demand">Что ищут и не находят</h2><p>Настоящие запросы к Qydyr. Храним только счётчики: квартал, тип просьбы и день. Без текста, координат и аккаунтов.</p></div></div>
     <div class="two">
-      <div class="panel"><h3>За 30 дней: что не нашли</h3><div id="needs" style="display:flex;flex-direction:column;gap:10px"><span class="empty">—</span></div></div>
-      <div class="panel"><h3>Последние 3 часа</h3><div id="live" style="display:flex;flex-direction:column;gap:8px"><span class="empty">—</span></div></div>
+      <div class="card"><h3>За 30 дней</h3><div id="needs"><span class="empty">—</span></div><p class="note" id="k-note"></p></div>
+      <div class="card"><h3>Последние 3 часа</h3><div id="live"><span class="empty">—</span></div></div>
     </div>
   </section>
 
-  <section aria-labelledby="h-data">
-    <h2 id="h-data">Откуда данные</h2>
-    <p class="lead">Каждый ответ Qydyr стоит на этих источниках. Сбор автоматический, по расписанию; у каждого события хранится цитата из источника, у каждого факта прогулки — ссылка. Что не знаем — показываем как «неизвестно».</p>
+  <section class="block" aria-labelledby="h-data">
+    <div class="sec-head"><div><h2 id="h-data">На чём это стоит</h2><p>Каждый ответ Qydyr опирается на эти данные. Сбор автоматический, по расписанию. Чего не знаем, честно показываем как «неизвестно».</p></div></div>
+    <div class="kpis" id="kpis"><div class="kpi"><span class="empty">Загружаю…</span></div></div>
     <div class="two">
-      <div class="panel"><h3>Полнота базы</h3><div id="coverage" style="display:flex;flex-direction:column;gap:12px"><span class="empty">—</span></div></div>
-      <div class="panel"><h3>Как обновляется</h3><div id="schedule"><span class="empty">—</span></div></div>
+      <div class="card cov"><h3>Насколько полные данные</h3><div id="coverage"><span class="empty">—</span></div><p class="note" id="cov-note"></p></div>
+      <div class="card"><h3>Как обновляется</h3><div id="schedule"><span class="empty">—</span></div></div>
     </div>
-    <div class="panel" style="margin-top:18px"><h3>Источники</h3><div class="table-wrap" id="sources"><span class="empty">—</span></div></div>
+    <details class="src" id="src-box"><summary>Источники <span id="src-sum"></span></summary><div class="src-list" id="sources"></div></details>
   </section>
 
-  <section aria-labelledby="h-privacy">
-    <h2 id="h-privacy">Что хранится</h2>
-    <ul class="plain">
-      <li>Аудит города — это запросы, которые Qydyr задаёт сам: в нём нет данных людей.</li>
-      <li>Живой спрос — счётчики по дню, ячейке ~1 км и типу просьбы. Текст запроса, точные координаты и аккаунты не хранятся.</li>
-      <li>Ячейки, где спросили меньше 3 раз, не показываются. «Последние 3 часа» живут только в памяти сервера.</li>
-      <li>Место без отметки в OpenStreetMap не объявляется доступным или открытым: оно попадает в «вероятно» или «неизвестно».</li>
-    </ul>
+  <section class="block" aria-labelledby="h-privacy">
+    <div class="sec-head"><div><h2 id="h-privacy">Что мы храним</h2></div></div>
+    <div class="priv" id="priv"></div>
   </section>
 </main>
+<footer><div class="wrap">© участники OpenStreetMap (ODbL) · © 2ГИС · погода и воздух: Open-Meteo, CAMS · Qydyr — прототип для хакатона Build with AI, Астана</div></footer>
 </body>
 </html>

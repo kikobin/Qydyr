@@ -17,6 +17,8 @@ services:
         sync: false
       - key: QYDYR_DGIS_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
       - key: QYDYR_CLAUDE_MODEL
         value: claude-haiku-5-5
       - key: QYDYR_CLAUDE_MODEL_SMART

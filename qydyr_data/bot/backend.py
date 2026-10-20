@@ -15,6 +15,7 @@ class Backend(Protocol):
     def answer(self, answer_id: str) -> dict | None: ...
     def walks(self, lat: float, lon: float, lang: str = "ru") -> list[dict]: ...
     def whereami(self, image: bytes, lang: str) -> dict: ...
+    def voice(self, audio: bytes, lang: str) -> str | None: ...
     def tours(self, lang: str = "ru") -> list[dict]: ...
     def tour(self, tour_id: str, lang: str = "ru") -> dict | None: ...
     def tour_progress(self, tour_id: str, lat: float, lon: float, visited: list[str], accuracy: float | None = None) -> dict: ...
@@ -61,6 +62,10 @@ class LocalBackend:
             return api.walks(lat, lon, None, None, lang=lang, data=data)
         finally:
             conn.close()
+
+    def voice(self, audio: bytes, lang: str) -> str | None:
+        from .. import stt
+        return stt.transcribe(audio, "voice.ogg", lang)
 
     def whereami(self, image: bytes, lang: str) -> dict:
         from .. import api
@@ -130,6 +135,10 @@ class HttpBackend:
         r = self.c.get("/walks", params={"lat": lat, "lon": lon, "lang": lang})
         r.raise_for_status()
         return r.json()
+
+    def voice(self, audio: bytes, lang: str) -> str | None:
+        r = self.c.post("/voice", files={"audio": ("voice.ogg", audio, "audio/ogg")}, data={"lang": lang})
+        return (r.json().get("text") or None) if r.status_code == 200 else None
 
     def whereami(self, image: bytes, lang: str) -> dict:
         r = self.c.post("/whereami", files={"photo": ("photo.jpg", image, "image/jpeg")}, data={"lang": lang})

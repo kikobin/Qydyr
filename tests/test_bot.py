@@ -187,7 +187,9 @@ def test_group_pick_without_place_asks_in_group_terms(harness):
     cq = CallbackQuery(id="11", from_user=USER, chat_instance="y", message=as_message(gathering, GROUP), data=f"g:pick:{g.gid}")
     feed(bot, dp, callback_query=cq)
     last = s.sent(SendMessage)[-1].text
-    assert "Ответьте на это сообщение геопозицией" in last and "кнопкой ниже" not in last
+    assert "Моя геопозиция" in last and "ответьте на это сообщение местом" in last
+    geo = s.sent(SendMessage)[-1].reply_markup.inline_keyboard[0][0]
+    assert geo.url == f"https://t.me/{qb.bot_username}?start=gl_{g.gid}"   # groups have no location button: the private chat has
     # the reply to that "Где вы?" is where the group is: it picks at once, no second tap
     pid = next(mid for (chat, mid), gid in qb.state.by_message.items() if gid == g.gid and mid != g.message_id)
     prompt = Message(message_id=pid, date=datetime.now(), chat=GROUP, from_user=User(id=42, is_bot=True, first_name="Qydyr"))
@@ -213,6 +215,10 @@ def test_inline_mode(harness):
     assert res.results and res.results[0].title.startswith("1.") and res.results[0].reply_markup
     feed(bot, dp, inline_query=InlineQuery(id="q2", from_user=USER, query="кофе", offset=""))
     assert s.sent(AnswerInlineQuery)[-1].results[0].id == "hint"
+    # the last location sent to the bot answers "кофе" typed inline
+    qb.state.session(USER.id).set_location(51.0900, 71.4165)
+    feed(bot, dp, inline_query=InlineQuery(id="q3", from_user=USER, query="кофе", offset=""))
+    assert s.sent(AnswerInlineQuery)[-1].results[0].id != "hint"
 
 
 def test_fmt_without_telegram():

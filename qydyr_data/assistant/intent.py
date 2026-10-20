@@ -103,6 +103,12 @@ def _hours(t: str, pattern: str) -> re.Match | None:
 
 def parse_budget(text: str) -> tuple[int | None, int | None]:
     t = text.lower()
+    # "1 час 30 минут", "2ч 15м", "час и 20 минут", "1 hour 30 min": the minutes count too
+    m = re.search(rf"(?:\b(\d+|{_NUM})\s*)?(?:час(?:а|ов)?|ч|hours?|h|сағат)\.?\s*(?:и\s+|and\s+)?(\d{{1,2}})\s*(?:мин\w*|м\b|min\w*|m\b)", t)
+    if m:
+        h = (NUM_WORDS.get(m[1]) or _num(m[1])) if m[1] else 1
+        v = round(h * 60) + int(m[2])
+        return v, v
     m = re.search(r"(\d+(?:[.,]\d)?)\s*[–—-]\s*(\d+(?:[.,]\d)?)\s*(час|ч\b|hour|сағат)", t)
     if m:
         return int(_num(m[1]) * 60), int(_num(m[2]) * 60)

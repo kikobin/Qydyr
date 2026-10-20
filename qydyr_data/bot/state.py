@@ -30,6 +30,8 @@ class Session:
     walk: "Walk | None" = None          # a guided walk in progress
     gen_tours: dict[str, dict] = field(default_factory=dict)   # themed walks from the last /walks, as tours
     last_answer: str | None = None      # the answer a next message follows up on
+    group_gid: str | None = None        # "📍 Моя геопозиция" tapped in a group: the next location goes there
+    group_at: float = 0.0
     last_answer_at: float = 0.0
 
     def location(self) -> tuple[float, float] | None:
@@ -55,6 +57,10 @@ class Session:
 
     def set_context(self, answer_id: str | None) -> None:
         self.last_answer, self.last_answer_at = answer_id, time.time()
+
+    def take_group(self) -> str | None:
+        gid, self.group_gid = self.group_gid, None
+        return gid if gid and time.time() - self.group_at <= PENDING_TTL_S else None
 
     def set_pending(self, text: str | None) -> None:
         self.pending, self.pending_at = text, time.time()
@@ -109,6 +115,7 @@ class Gathering:
     votes: dict[int, int] = field(default_factory=dict)  # votes of the current poll only
     picking: bool = False               # a pick is running: a second tap waits
     final_done: bool = False            # "Итог" already announced for the current poll
+    asked_place: bool = False           # «Подобрать» asked "Где вы?": the first place or location picks at once
     created: float = field(default_factory=time.time)
 
     def wishes(self) -> list[str]:
