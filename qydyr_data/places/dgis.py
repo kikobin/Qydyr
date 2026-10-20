@@ -80,8 +80,11 @@ RUBRIC_TAXONOMY = {rid: cat for _, rid, cat in RUBRIC_IMPORT}
 SOURCE_ID = "2gis"
 ATTRIBUTION = "© 2ГИС"
 DAYS = [("Mon", "Mo"), ("Tue", "Tu"), ("Wed", "We"), ("Thu", "Th"), ("Fri", "Fr"), ("Sat", "Sa"), ("Sun", "Su")]
-ENRICH_CATEGORIES = ("culture", "food", "kids", "nightlife", "entertainment", "shopping", "work", "sport", "landmark")
+# the places people ask for by name first (a museum, a monument, a mall); cafés come by rubric anyway
+ENRICH_CATEGORIES = ("culture", "landmark", "shopping", "entertainment", "kids", "sport", "work", "nightlife", "food")
 MATCH_M, MATCH_NAME = 150, 80          # the same place: within 150 m and names that agree
+# a theatre's hours in 2ГИС are its office's (09:00–18:00): the evening performance is when people go
+SHOW_VENUES = {"theatre", "concert_hall", "circus", "arts_centre", "events_venue"}
 DISCOVER = ["кофейня", "кафе", "ресторан", "детский развлекательный центр", "коворкинг", "бар", "музей",
             "кинотеатр", "торговый центр"]
 
@@ -593,7 +596,7 @@ def merge(p: Place, item: dict) -> None:
     rub = rubric_names(item)
     if rub:
         p.attrs["2gis:rubrics"] = rub[:3]
-    if not p.hours_valid and (oh := schedule_to_oh(item.get("schedule"))):
+    if not p.hours_valid and p.subcategory not in SHOW_VENUES and (oh := schedule_to_oh(item.get("schedule"))):
         p.opening_hours, p.hours_valid = oh, True
         p.attrs["opening_hours:source"] = p.attrs["2gis:url"]
     attrs_ = attributes(item)

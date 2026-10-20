@@ -41,10 +41,14 @@ def place(pid, name, lat, lon, **kw):
 
 
 def test_merge_fills_gaps_and_says_where_from():
+    museum = place("osm:way/2002", "Astana Opera", 51.1307, 71.4146, subcategory="museum")
+    dgis.merge(museum, ITEMS["Астана Опера"][0])
+    assert museum.hours_valid and museum.opening_hours == "Tu-Su 10:00-20:00"
+    assert museum.attrs["opening_hours:source"].startswith("https://2gis.kz/astana/firm/")
+    # a theatre's hours in 2ГИС are its office's: an evening performance must not read as "closed"
     opera = place("osm:way/2002", "Astana Opera", 51.1307, 71.4146)
     dgis.merge(opera, ITEMS["Астана Опера"][0])
-    assert opera.hours_valid and opera.opening_hours == "Tu-Su 10:00-20:00"
-    assert opera.attrs["opening_hours:source"].startswith("https://2gis.kz/astana/firm/")
+    assert not opera.hours_valid and opera.attrs["2gis:rating"] == 4.8
     assert (opera.attrs["2gis:rating"], opera.attrs["2gis:reviews"]) == (4.8, 2140)
     assert opera.attrs["wheelchair"] == "yes" and opera.attrs["wheelchair:source"] == "2gis"
     assert opera.phone == "+77172000001" and opera.website == "https://astanaopera.kz"
@@ -110,7 +114,8 @@ def test_enrich_discover_apply(db, sample_places, tmp_path, monkeypatch):
     places = store.load_places(db)
     enriched, added = dgis.apply(db, places)
     by_id = {p.id: p for p in places}
-    assert by_id["osm:way/2002"].hours_valid and by_id["osm:way/2010"].attrs["2gis:id"] == "70000001000000004"   # Mega linked, no twin
+    assert by_id["osm:way/2002"].attrs["2gis:rating"] and not by_id["osm:way/2002"].hours_valid   # the opera: no office hours
+    assert by_id["osm:way/2010"].attrs["2gis:id"] == "70000001000000004"                    # Mega linked, no twin
     assert {"2gis:70000001000000003", "2gis:70000001000000005"} <= set(by_id) and "2gis:70000001000000006" not in by_id
     boom = by_id["2gis:70000001000000003"]
     assert (boom.category, boom.subcategory, boom.source_id) == ("food", "cafe", "2gis")
