@@ -34,6 +34,7 @@ class Intent(BaseModel):
     wheelchair: bool = False
     persona: Optional[Literal["local", "tourist", "student", "family"]] = None
     needs: list[Need] = Field(default_factory=list)
+    event_kinds: list[str] = Field(default_factory=list)  # "концерт" -> ["concert"]: which events count
     want_route: bool = False
     only_events: bool = False                   # "только события" switch
     assumptions: list[str] = Field(default_factory=list)  # shown to the person as editable chips

@@ -9,7 +9,8 @@
   attrs: {view: "yes"}
 
 Дворец мира и согласия:
-  aliases: [Пирамида, Pyramid of Peace, Palace of Peace and Reconciliation, Бейбітшілік және келісім сарайы]
+  aliases: [Пирамида, Pyramid of Peace, Palace of Peace and Reconciliation, Бейбітшілік және келісім сарайы,
+            Дворец мира]
   indoor: indoor
 
 Хан Шатыр:
@@ -35,6 +36,20 @@ Mega Silk Way:
   aliases: [Мега Силк Уэй, Мега Силк Вей, MEGA Silk Way, ТРЦ Mega Silk Way, Мега Силквей]
   indoor: indoor
 
+Abu Dhabi Plaza:
+  aliases: [Абу-Даби Плаза, Абу Даби Плаза, ТРЦ Абу-Даби Плаза, Abu-Dhabi Plaza]
+  indoor: indoor
+
+# Landmarks people name in their own words (only places that exist in OSM: no coordinates are made up here)
+Л.Н.Гумилев атындағы Еуразия ұлттық университеті:
+  aliases: [ЕНУ, ЕНУ имени Гумилёва, Евразийский национальный университет, Eurasian National University, ENU]
+
+Мәңгілік Ел салтанат қақпасы:
+  aliases: [Триумфальная арка, Триумфальная арка Мангилик Ел, арка Мангилик Ел, Арка Мәңгілік Ел, Mangilik El Arch]
+
+Нұрлы Жол:
+  aliases: [Нурлы Жол, вокзал Нурлы Жол, ЖД вокзал Нурлы Жол, Нұрлы Жол вокзалы, Nurly Zhol]
+
 Astana IT University:
   aliases: [AITU, АИТУ, Astana IT, Астана IT университет, Астана Ай Ти, Астана Айти]
   indoor: indoor
@@ -55,6 +70,10 @@ Astana IT University:
 
 Жастар театры:
   aliases: [Молодёжный театр, Молодежный театр, Театр Жастар, Жастар театр]
+  indoor: indoor
+
+Жастар Сарайы:
+  aliases: [Дворец Жастар, Дворец молодёжи Жастар, Дворец молодежи Жастар, Дворец молодёжи «Жастар», Zhastar Palace]
   indoor: indoor
 
 Қ.Қуанышбаев атындағы Мемлекеттік академиялық қазақ музыкалық-драма театры:

@@ -14,23 +14,27 @@
     GET  /whats-on, /places-near, /config, /health
     /app/                     the Mini App (also works in a normal browser), /app/pulse.html — the jury screen
 
-Privacy: coordinates are used in memory for one answer; logs and the pulse keep a ~1 km cell only.
-If a request carries Telegram Mini App initData, its signature is checked.
+Privacy: coordinates are rounded to ~100 m on arrival and used in memory for one answer; logs and the pulse
+keep a ~1 km cell only (query strings are cut from the access log).
+If a request carries Telegram Mini App initData, its signature is checked. Endpoints that call Claude are
+rate-limited per Telegram user (valid initData) or per IP.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import time
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Annotated, Any, Iterator, Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import settings, store
 from .assistant import placeqa
@@ -45,22 +49,76 @@ from .assistant.walks import build_walks
 from .assistant.weather import PRESETS
 from .badges import describe_event, describe_place
 from .pulse import ANSWERS, PULSE
-from .telegram_auth import validate_init_data
+from .telegram_auth import bot_key, validate_init_data
 
 log = logging.getLogger("qydyr.api")
 app = FastAPI(title="Qydyr API", version="1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# the Mini App and the pulse screen are served from this same origin; other sites get no CORS
+app.add_middleware(CORSMiddleware, allow_origins=[settings.PUBLIC_URL] if settings.PUBLIC_URL else ["*"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 _PLACES_CACHE: tuple[float, list] | None = None
 Preset = Literal["blizzard", "frost", "rain", "summer_evening", "smog"]
+Lat = Annotated[float, Field(ge=-90, le=90)]
+Lon = Annotated[float, Field(ge=-180, le=180)]
+
+
+class _NoQuery(logging.Filter):
+    """uvicorn's access log line carries the full path: drop the query (?lat=…&lon=…), keep method and route."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) >= 3 and isinstance(record.args[2], str):
+            record.args = (*record.args[:2], record.args[2].split("?", 1)[0], *record.args[3:])
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_NoQuery())
+
+# Claude costs money per call: a few per minute per person is plenty for a human, not for a script.
+# Behind one venue Wi-Fi a whole jury shares an IP, so the IP budget is wider than the per-user one.
+LIMITS = {"user": 30, "ip": 120}        # requests per minute
+_HITS: dict[str, deque] = defaultdict(deque)
+
+
+def _costly(request: Request) -> bool:
+    p = request.url.path
+    if request.method == "POST" and (p == "/ask" or p.startswith("/ask/") or p == "/whereami" or p.endswith("/ask")):
+        return True
+    if p.startswith("/story/") or (p.startswith("/tours/") and p.endswith("/story")):
+        return True
+    return request.query_params.get("lang", "ru") != "ru" and (p == "/walks" or p.startswith("/tours/"))
+
+
+def _over_limit(key: str, limit: int, now: float) -> bool:
+    q = _HITS[key]
+    while q and now - q[0] > 60:
+        q.popleft()
+    if len(q) >= limit:
+        return True
+    q.append(now)
+    if len(_HITS) > 20000:   # forget idle keys
+        for k in [k for k, v in _HITS.items() if not v or now - v[-1] > 60]:
+            del _HITS[k]
+    return False
 
 
 @app.middleware("http")
 async def telegram_init_data(request: Request, call_next):
-    """Mini App requests carry initData; when a bot token is configured, a bad signature is rejected."""
+    """Mini App requests carry initData; when a bot token is configured, a bad signature is rejected.
+    Without initData (a normal browser, the pulse screen) the app still works, under the per-IP budget."""
     init = request.headers.get("x-telegram-init-data")
-    if init and settings.TELEGRAM_BOT_TOKEN and validate_init_data(init, settings.TELEGRAM_BOT_TOKEN) is None:
-        return JSONResponse({"detail": "invalid Telegram initData"}, status_code=401)
+    user = None
+    if init and settings.TELEGRAM_BOT_TOKEN:
+        fields = validate_init_data(init, settings.TELEGRAM_BOT_TOKEN)
+        if fields is None:
+            return JSONResponse({"detail": "invalid Telegram initData"}, status_code=401)
+        user = (fields.get("user") or {}).get("id") if isinstance(fields.get("user"), dict) else None
+    is_bot = bool(settings.TELEGRAM_BOT_TOKEN) and hmac.compare_digest(
+        request.headers.get("x-qydyr-bot", ""), bot_key(settings.TELEGRAM_BOT_TOKEN))
+    if settings.ANTHROPIC_API_KEY and _costly(request) and not is_bot:   # the bot is one trusted client
+        key, limit = (f"u:{user}", LIMITS["user"]) if user else (f"ip:{request.client.host if request.client else '-'}", LIMITS["ip"])
+        if _over_limit(key, limit, time.monotonic()):
+            return JSONResponse({"detail": "too many requests, try again in a minute"}, status_code=429,
+                                headers={"Retry-After": "60"})
     return await call_next(request)
 
 
@@ -77,6 +135,8 @@ def _places(data: DbData) -> list:
 
 
 def _local(at: datetime | None) -> datetime | None:
+    if at is not None and not 2000 <= at.year <= 2100:
+        raise HTTPException(422, "at: a date between 2000 and 2100")
     if at is None:
         if settings.DEMO_NOW:  # demo mode: a frozen "now"
             return datetime.fromisoformat(settings.DEMO_NOW).replace(tzinfo=settings.TZ)
@@ -105,12 +165,12 @@ def _llm_intent():
 
 
 class AskIn(BaseModel):
-    text: str = ""
+    text: str = Field("", max_length=1000)
     anchor: Anchor | None = None                         # a known place (photo answers, group meeting points)
-    lat: float | None = None
-    lon: float | None = None
+    lat: Lat | None = None
+    lon: Lon | None = None
     at: datetime | None = None
-    members: list[str] | None = None
+    members: list[Annotated[str, Field(max_length=300)]] | None = Field(None, max_length=12)
     overrides: Overrides | None = None
     weather_preset: Preset | None = None
     surprise: bool = False
@@ -132,7 +192,7 @@ class FeedbackIn(BaseModel):
 
 
 class QAIn(BaseModel):
-    q: str
+    q: str = Field(max_length=500)
     at: datetime | None = None
 
 
@@ -154,7 +214,19 @@ def config() -> dict:
     }
 
 
+def _check_overrides(o: Overrides | None) -> None:
+    if o is None:
+        return
+    for name in ("budget_min", "budget_max", "airport_buffer_min"):
+        v = getattr(o, name)
+        if v is not None and not 0 <= v <= 24 * 60:
+            raise HTTPException(422, f"{name}: 0–1440 minutes")
+
+
 def _run(body: AskIn, data: DbData) -> dict:
+    _check_overrides(body.overrides)
+    if body.lat is not None and body.lon is not None:  # ~100 m is enough for walking minutes; exact GPS is not kept
+        body.lat, body.lon = round(body.lat, 3), round(body.lon, 3)
     text = body.text.strip() or ("удиви меня" if body.surprise else "что интересного рядом")
     assistant = Assistant(data, llm=_llm_intent() if body.llm else None, places=_places(data))
     ans = assistant.ask(text, at=_local(body.at), lat=body.lat, lon=body.lon, members=body.members,
@@ -196,7 +268,10 @@ def ask_patch(answer_id: str, body: PatchIn, data: DbData = Depends(get_data)) -
     if prev is None:
         raise HTTPException(404, "answer expired")
     req = AskIn.model_validate(prev["request"])
-    req.overrides = (req.overrides or Overrides()).merged(body.patch)
+    try:
+        req.overrides = (req.overrides or Overrides()).merged(body.patch)
+    except (ValidationError, TypeError) as e:
+        raise HTTPException(422, f"bad patch: {e.__class__.__name__}")
     req.format = body.format
     return _run(req, data)
 
@@ -217,7 +292,7 @@ def feedback(body: FeedbackIn) -> dict:
 
 
 @app.get("/walks")
-def walks(lat: float, lon: float, at: datetime | None = None, weather_preset: Preset | None = None,
+def walks(lat: Lat, lon: Lon, at: datetime | None = None, weather_preset: Preset | None = None,
           lang: Literal["ru", "kk", "en"] = "ru", data: DbData = Depends(get_data)) -> list[dict]:
     assistant = Assistant(data, places=_places(data))
     anchor = Anchor(lat=lat, lon=lon, label="ваша геолокация", source="gps")
@@ -254,7 +329,7 @@ def _weather_at(lat: float, lon: float, at: datetime, preset_name: str | None = 
 
 
 @app.get("/weather")
-def weather_now(lat: float, lon: float, at: datetime | None = None, weather_preset: Preset | None = None) -> dict:
+def weather_now(lat: Lat, lon: Lon, at: datetime | None = None, weather_preset: Preset | None = None) -> dict:
     """Weather for the walk screen and the mascot's outfit (cold, smog, rain, night...)."""
     at_ = _local(at) or _now()
     view = weather_view(_weather_at(round(lat, 2), round(lon, 2), at_, weather_preset), at_)
@@ -278,9 +353,9 @@ def tour_get(tour_id: str, lang: Literal["ru", "kk", "en"] = "ru") -> dict:
 
 
 class ProgressIn(BaseModel):
-    lat: float
-    lon: float
-    visited: list[str] = Field(default_factory=list)
+    lat: Lat
+    lon: Lon
+    visited: list[str] = Field(default_factory=list, max_length=100)
     accuracy: float | None = None
 
 
@@ -304,8 +379,8 @@ def tour_story(tour_id: str, stop_id: str, lang: Literal["ru", "kk", "en"] = "ru
 
 
 @app.get("/walk/nudges")
-def walk_nudges(lat: float, lon: float, at: datetime | None = None, next_lat: float | None = None,
-                next_lon: float | None = None, weather_preset: Preset | None = None,
+def walk_nudges(lat: Lat, lon: Lon, at: datetime | None = None, next_lat: Lat | None = None,
+                next_lon: Lon | None = None, weather_preset: Preset | None = None,
                 lang: Literal["ru", "kk", "en"] = "ru", data: DbData = Depends(get_data)) -> dict:
     """Hints on the way: events starting next to you, a place to warm up, bad air. A ~100 m cell is
     enough for "nearby", so the position is rounded before use."""
@@ -412,7 +487,8 @@ def place_story(place_id: str, lang: Literal["ru", "kk", "en"] = "ru", at: datet
 
 
 @app.get("/qr.svg", include_in_schema=False)
-def qr_svg(data: str = Query(..., max_length=500), dark: str = "#0A1424", light: str = "#EDF2F7") -> Response:
+def qr_svg(data: str = Query(..., max_length=500), dark: str = Query("#0A1424", pattern=r"^#[0-9A-Fa-f]{3,8}$"),
+           light: str = Query("#EDF2F7", pattern=r"^#[0-9A-Fa-f]{3,8}$")) -> Response:
     import io
 
     import segno
@@ -433,16 +509,17 @@ def pulse(at: datetime | None = None, data: DbData = Depends(get_data)) -> dict:
 
 
 @app.get("/whats-on")
-def whats_on(lat: float, lon: float, radius: float = 1500, at: datetime | None = None, horizon: int = 180,
+def whats_on(lat: Lat, lon: Lon, radius: float = Query(1500, gt=0, le=20000), at: datetime | None = None,
+             horizon: int = Query(180, ge=0, le=7 * 24 * 60),
              data: DbData = Depends(get_data)) -> list[dict]:
     rows = store.whats_on(data.conn, lat, lon, radius, _local(at), horizon)
     return [{**r, "badge": describe_event(r)} for r in rows]
 
 
 @app.get("/places-near")
-def places_near(lat: float, lon: float, radius: float = 800, at: datetime | None = None,
+def places_near(lat: Lat, lon: Lon, radius: float = Query(800, gt=0, le=5000), at: datetime | None = None,
                 categories: str | None = Query(default=None, description="food,culture,park,..."),
-                limit: int = 50, data: DbData = Depends(get_data)) -> list[dict]:
+                limit: int = Query(50, ge=1, le=200), data: DbData = Depends(get_data)) -> list[dict]:
     cats = categories.split(",") if categories else None
     rows = store.places_near(data.conn, lat, lon, radius, _local(at), cats, limit)
     return [{**r, "badge": describe_place(r)} for r in rows]

@@ -107,7 +107,11 @@ class LocalBackend:
 
 class HttpBackend:
     def __init__(self, base: str) -> None:
-        self.c = httpx.Client(base_url=base.rstrip("/"), timeout=40)
+        # the whole bot is one client of the API: it carries a key derived from the bot token, so the API
+        # does not rate-limit all its users as one IP
+        from ..telegram_auth import bot_key
+        headers = {"x-qydyr-bot": bot_key(settings.TELEGRAM_BOT_TOKEN)} if settings.TELEGRAM_BOT_TOKEN else {}
+        self.c = httpx.Client(base_url=base.rstrip("/"), timeout=40, headers=headers)
 
     def ask(self, **body: Any) -> dict:
         r = self.c.post("/ask", json=body)

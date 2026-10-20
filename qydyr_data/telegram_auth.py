@@ -40,6 +40,11 @@ def validate_init_data(init_data: str, bot_token: str, max_age_s: int = 24 * 360
     return pairs
 
 
+def bot_key(bot_token: str) -> str:
+    """What the bot sends to the API when they run as separate services: proves it knows the token, never reveals it."""
+    return hmac.new(b"QydyrBot", bot_token.encode(), hashlib.sha256).hexdigest()
+
+
 def sign_init_data(fields: dict[str, str], bot_token: str) -> str:
     """Build a valid initData string (tests and local demos)."""
     from urllib.parse import urlencode

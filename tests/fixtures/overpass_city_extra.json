@@ -1,0 +1,31 @@
+{
+  "_comment": "Real-city pitfalls on top of overpass_sample.json: OSM copies of one place, same names in other spots, a skydiving airfield tagged as an aerodrome, rides inside a mall, a café whose address repeats a palace's in a suburb.",
+  "_fetched_at": "2026-10-20T03:00:00+00:00",
+  "elements": [
+    {"type": "node", "id": 9001, "lat": 51.0896, "lon": 71.4080, "tags": {"shop": "mall", "name": "Мега Силк Вей"}},
+    {"type": "node", "id": 9002, "lat": 51.1748, "lon": 71.4064, "tags": {"amenity": "cafe", "name": "Coffee Way"}},
+    {"type": "way", "id": 9003, "center": {"lat": 51.1220, "lon": 71.4279}, "tags": {
+      "shop": "mall", "name": "Abu Dhabi Plaza", "building": "retail"}},
+    {"type": "node", "id": 9004, "lat": 51.1712, "lon": 71.4117, "tags": {"tourism": "hotel", "name": "Astana plaza"}},
+    {"type": "node", "id": 9005, "lat": 51.3077, "lon": 71.3627, "tags": {"aeroway": "aerodrome", "name": "Прыжки с парашютом"}},
+    {"type": "node", "id": 9006, "lat": 51.12311, "lon": 71.46346, "tags": {
+      "amenity": "community_centre", "name": "Бейбітшілік және келісім сарайы"}},
+    {"type": "way", "id": 9007, "center": {"lat": 51.12312, "lon": 71.46346}, "tags": {
+      "amenity": "community_centre", "name": "Бейбітшілік және келісім сарайы", "building": "yes"}},
+    {"type": "node", "id": 9008, "lat": 51.1326, "lon": 71.4036, "tags": {
+      "tourism": "attraction", "name": "Gold Mine Coaster", "level": "4"}},
+    {"type": "node", "id": 9009, "lat": 51.1327, "lon": 71.4040, "tags": {"amenity": "cafe", "name": "Starbucks"}},
+    {"type": "node", "id": 9010, "lat": 51.1500, "lon": 71.4300, "tags": {"amenity": "cafe", "name": "Вечер"}},
+    {"type": "way", "id": 9011, "center": {"lat": 51.1082, "lon": 71.4028}, "tags": {
+      "leisure": "stadium", "name": "Астана Арена"}},
+    {"type": "node", "id": 9012, "lat": 51.1122, "lon": 71.5330, "tags": {"tourism": "artwork", "name": "Астана Арена"}},
+    {"type": "node", "id": 9013, "lat": 51.1061, "lon": 71.4090, "tags": {"railway": "station", "name": "Астана Арена"}},
+    {"type": "node", "id": 9014, "lat": 50.9940, "lon": 71.3696, "tags": {
+      "amenity": "cafe", "name": "Qazan Food", "addr:street": "улица Республики", "addr:housenumber": "34"}},
+    {"type": "way", "id": 9015, "center": {"lat": 51.1700, "lon": 71.4278}, "tags": {
+      "amenity": "community_centre", "name": "Жастар Сарайы", "addr:street": "Республика даңғылы", "addr:housenumber": "34"}},
+    {"type": "node", "id": 9016, "lat": 51.1565, "lon": 71.4377, "tags": {"tourism": "hotel", "name": "Жастар"}},
+    {"type": "relation", "id": 9017, "center": {"lat": 51.1580, "lon": 71.4677}, "tags": {
+      "amenity": "university", "name": "Л.Н.Гумилев атындағы Еуразия ұлттық университеті"}}
+  ]
+}

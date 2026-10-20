@@ -26,8 +26,8 @@ from . import travel
 from . import weather as W
 from .group import Member, combine, group_detail, group_score, parse_members
 from .intent import (ASSUME_FLIGHT, ASSUME_STROLL, ASSUME_TIME, ASSUME_WALK, ClaudeIntentParser, apply_defaults,
-                     apply_overrides, understand)
-from .locate import Locator
+                     apply_overrides, event_kind_fits, understand)
+from .locate import Locator, key_set
 from .models import (AirInfo, Anchor, Answer, Chip, ChipOption, Comfort, Context, FunnelStep, Intent, Item,
                      Overrides, Rejected, WeatherInfo)
 from .privacy import coarse
@@ -133,11 +133,14 @@ def display_name(row: dict, lang: str) -> str:
 
 def cand_from_place(r: dict, lang: str = "ru") -> K.Cand:
     attrs = r.get("attrs") or {}
-    return K.Cand(kind="place", id=r["place_id"], title=display_name(r, lang), lat=r["lat"], lon=r["lon"],
-                  category=r["category"], subcategory=r["subcategory"], indoor=r["indoor"], attrs=attrs,
-                  description=attrs.get("description"), open_state=r["open_state"], closes_at=r["closes_at"],
-                  opens_at=r["opens_at"], source_url=r.get("source_url"),
-                  confidence=0.85 if r["open_state"] != "unknown" else 0.7)
+    c = K.Cand(kind="place", id=r["place_id"], title=display_name(r, lang), lat=r["lat"], lon=r["lon"],
+               category=r["category"], subcategory=r["subcategory"], indoor=r["indoor"], attrs=attrs,
+               description=attrs.get("description"), open_state=r["open_state"], closes_at=r["closes_at"],
+               opens_at=r["opens_at"], source_url=r.get("source_url"),
+               confidence=0.85 if r["open_state"] != "unknown" else 0.7)
+    if K.indoor_attraction(c):  # a roller coaster on the 4th floor of a mall is not a landmark outside
+        c.indoor, c.category = "indoor", "entertainment"
+    return c
 
 
 def relevance(c: K.Cand, needs: list[str]) -> float:
@@ -153,7 +156,7 @@ class Assistant:
                  places: list[PlaceLite] | None = None) -> None:
         self.data = data
         self.llm = llm
-        self.locator = Locator(places if places is not None else data.places_lite())
+        self.locator = Locator.of(places) if places is not None else Locator(data.places_lite())
 
     # ------------------------------------------------------------------ public
     def ask(self, text: str, *, at: datetime | None = None, lat: float | None = None, lon: float | None = None,
@@ -169,11 +172,20 @@ class Assistant:
             if intent.start_weekday is not None:
                 days = (intent.start_weekday - at.weekday()) % 7
             planned = datetime.combine(at.date() + timedelta(days=days), intent.start_time, tzinfo=at.tzinfo)
+            if planned <= at and not days and intent.start_time.hour < 6:
+                planned += timedelta(days=1)  # "в 2 ночи" said in the afternoon is the coming night
             if planned > at:
                 at = planned
         if group:
             intent = combine(intent, group)
         explicit = apply_overrides(intent, overrides)
+        if intent.deadline == "time" and intent.deadline_time and intent.budget_max is None:
+            # "свободен до 18:00": the free time is the time until then, not a guessed hour
+            dl = datetime.combine(at.date(), intent.deadline_time, tzinfo=settings.TZ)
+            if dl <= at:
+                dl += timedelta(days=1)
+            if 10 <= _mins(dl - at) <= 12 * 60:
+                intent.budget_min = intent.budget_max = _mins(dl - at)
         if surprise:
             intent.needs = list(dict.fromkeys(SURPRISE_NEEDS + list(intent.needs)))  # type: ignore[arg-type]
         intent = apply_defaults(intent, explicit)
@@ -234,6 +246,19 @@ class Assistant:
             picked = [rng.choices(top, weights=[math.exp(5 * s.score) for s in top])[0]]
         else:
             picked = self._pick(scored)
+        if not picked and not surprise and not group and airport is None and ASSUME_WALK in intent.assumptions:
+            # nothing within walking reach (the nearest stand-up is 3 km away): the same request by taxi
+            # before giving up, since walking was only our guess
+            intent.mode = "taxi"
+            by_taxi = self._candidates(intent, anchor, at, end, budget_hi, weather, airport, group, buffer)
+            if (taxi_picked := self._pick(by_taxi[0])):
+                scored, rejects, radius, speed = by_taxi
+                picked = taxi_picked
+                intent.assumptions = [a for a in intent.assumptions if a != ASSUME_WALK]
+                ans.chips = self._chips(intent, anchor, buffer)
+                ans.notes.append("Пешком рядом ничего подходящего — вот что есть на такси.")
+            else:
+                intent.mode = "walk"
         if not picked:
             ans.notes.append("Рядом не нашлось подходящего с учётом времени, часов работы и погоды. "
                              "Попробуйте увеличить время или поехать на такси.")
@@ -241,9 +266,9 @@ class Assistant:
         if group:
             ans.group_notes.append("Выбираю так, чтобы никто не остался недоволен: важнее самый недовольный, чем средний.")
         if picked and not surprise and (intent.want_route or budget_hi >= 60):
-            relevant = [s for s in scored if s.need_score >= 0.4 or s in picked]
-            ans.route = build_route(sorted(relevant, key=lambda s: -s.score), anchor, at, end, kids=intent.with_kids,
-                                    wheelchair=intent.wheelchair, weather=weather)
+            # the route is the answer in order, not another set of places: one plan on the screen
+            ans.route = build_route(picked, anchor, at, end, kids=intent.with_kids, wheelchair=intent.wheelchair,
+                                    weather=weather)
         ans.rejected = self._why_not(rejects, scored, picked, intent, radius, surprise=surprise)
         ans.funnel = self._funnel(scored, rejects, len(ans.items))
         ans.context = self._context(radius, speed, end, at, weather)
@@ -326,20 +351,36 @@ class Assistant:
         look = radius * 1.6  # a bit further, to be able to say "this one is too far"
 
         cands: dict[str, K.Cand] = {}
-        for r in self.data.places_near(anchor.lat, anchor.lon, look, at, 500):
+        rows = self.data.places_near(anchor.lat, anchor.lon, look, at, 500)
+        closed_malls = [r for r in rows if r["subcategory"] == "mall" and r["open_state"] == "closed"]
+        for r in rows:
             if r["category"] == "anchor":  # a university or an airport is where you are, not where to go
                 continue
             if r["subcategory"] == "playground" and not (it.with_kids or "playground" in it.needs):
                 continue
-            cands[r["place_id"]] = cand_from_place(r, it.lang)
+            c = cands[r["place_id"]] = cand_from_place(r, it.lang)
+            if c.open_state == "unknown" and c.category in ("food", "shopping", "entertainment", "nightlife"):
+                # a café with unknown hours 30 m from the centre of a mall that is closed now is inside it
+                c.inside = next((m for m in closed_malls if m["place_id"] != c.id and travel.haversine_m(
+                    m["lat"], m["lon"], c.lat, c.lon) <= (250 if "level" in c.attrs else 120)), None)
+        late = not 6 <= at.astimezone(settings.TZ).hour < 22
         for e in self.data.whats_on(anchor.lat, anchor.lon, look, at, max(budget, 60)):
+            if (e["kind"] == "kids" and not it.with_kids) or not event_kind_fits(e, it.event_kinds):
+                continue  # a kids' show is no answer to "хочу на концерт", like a playground is not
             if e.get("place_id") and e["place_id"] in cands:
+                # what is on there counts only if it fits the free time: not "в 18:00 начнётся" at 01:30
+                if e["state"] not in ("now", "soon") and (e["starts_at"] > end + timedelta(minutes=30)
+                                                          or (late and e["state"] == "today")):
+                    continue
                 cands[e["place_id"]].attached.append(e)
             else:
                 cands["ev:" + e["event_id"]] = K.Cand(
                     kind="event", id=e["event_id"], title=e["title"], lat=e["lat"], lon=e["lon"], category="event",
                     subcategory=e["kind"], indoor="unknown", event=e, description=e.get("description"),
                     source_url=e.get("url"), confidence=e["confidence"])
+        for pid in self._anchor_ids(anchor, cands):
+            if not self._worth_staying(cands[pid], it, weather):
+                del cands[pid]  # "go to Khan Shatyr" is no advice to someone standing in Khan Shatyr
 
         scored: list[Scored] = []
         rejects: list[Reject] = []
@@ -347,6 +388,38 @@ class Assistant:
             s = self._score(c, it, anchor, at, end, budget, weather, airport, group, radius, buffer, cold_cap)
             (scored if isinstance(s, Scored) else rejects).append(s)
         return scored, rejects, radius, speed
+
+    def _anchor_ids(self, anchor: Anchor, cands: dict[str, K.Cand]) -> list[str]:
+        """The named place and its OSM copies on the same spot ("Мега Силк Вей" next to "Mega Silk Way")."""
+        if not anchor.place_id or (me := self.locator.places.get(anchor.place_id)) is None:
+            return []
+        names = set().union(*(key_set(n) for n in (me.name, *me.aliases)))
+        out = []
+        for pid, c in cands.items():
+            p = self.locator.places.get(pid)
+            if pid == me.id or (p is not None and travel.haversine_m(me.lat, me.lon, p.lat, p.lon) < 200
+                                and names & set().union(*(key_set(n) for n in (p.name, *p.aliases)))):
+                out.append(pid)
+        return out
+
+    @staticmethod
+    def _worth_staying(c: K.Cand, it: Intent, weather: W.Weather | None) -> bool:
+        """The place the person is at stays in the answer only when it is news or the answer itself:
+        something on inside right now, a museum to go into when culture is asked, a mall to walk in
+        when it is −25 outside. Not "Хан Шатыр — прямо здесь" for a quiet coffee."""
+        if any(e["state"] in ("now", "soon") for e in c.attached):
+            return True
+        if not K.kind_fit(c, it.event_kinds):
+            return False
+        first = K.need_match(c, it.needs[0])[0] if it.needs else "unknown"
+        if c.category in ("culture", "entertainment") or (c.subcategory in ("attraction", "viewpoint")
+                                                           and c.indoor in ("indoor", "mixed")):
+            return first in ("yes", "likely")
+        if c.category == "landmark":
+            return first == "yes"
+        if c.subcategory == "mall":
+            return weather is not None and weather.outdoor_penalty >= 0.35 and bool({"walk", "indoor"} & set(it.needs))
+        return False
 
     def _score(self, c: K.Cand, it: Intent, anchor: Anchor, at: datetime, end: datetime, budget: int,
                weather: W.Weather | None, airport: PlaceLite | None, group: list[Member], radius: float,
@@ -380,6 +453,9 @@ class Assistant:
         if it.only_events and c.kind == "place" and not any(e["state"] in ("now", "soon", "later_today")
                                                              for e in c.attached):
             return no("not_event", "сейчас там нет события")
+        if (m := c.inside) is not None:
+            return no("closed", f"внутри «{display_name(m, it.lang)}», а он закрыт"
+                                + (f", откроется {_when(m['opens_at'], at)}" if m.get("opens_at") else ""))
 
         start_at: datetime | None = None
         confidence = c.confidence
@@ -468,7 +544,7 @@ class Assistant:
             if walk > weather.max_outdoor_min and it.mode != "taxi":
                 return no("cold_walk", f"{walk} мин пешком при «{weather.level}» — комфортно не больше "
                                        f"{weather.max_outdoor_min} мин")
-            if weather.golden_hour(start + timedelta(minutes=5)) and (
+            if weather.golden_hour(start + timedelta(minutes=5)) and not K.indoor_attraction(c) and (
                     c.subcategory in K.PHOTO_SUBS or c.attrs.get("view") == "yes"):
                 reasons.append(f"успеете к золотому часу: закат в {_hm(weather.sunset)}")  # type: ignore[arg-type]
                 if {"photo", "view", "romantic"} & set(it.needs):
@@ -511,6 +587,8 @@ class Assistant:
 
         if it.persona == "tourist" and c.category in ("landmark", "culture"):
             bonus += 0.08
+        if not K.kind_fit(c, it.event_kinds):  # "хочу на выставку": a theatre is culture, but not that
+            penalty += 0.25
         # the first thing asked for matters most: "кофе и розетка" -> a museum is not an answer,
         # unless something else asked for is clearly there
         explicit = not any(a.startswith("просто погулять") for a in it.assumptions)

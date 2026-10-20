@@ -24,6 +24,8 @@ def build_route(scored: list["Scored"], anchor: Anchor, at: datetime, end: datet
     for k in (3, 2):
         best = None
         for perm in permutations(pool, k):
+            if len({"food" if p.cand.category == "food" else p.cand.subcategory for p in perm}) < k:
+                continue  # two cafés (or a café, then a restaurant) in a row is not a walk
             t, lat, lon = at, anchor.lat, anchor.lon
             stops: list[Stop] = []
             walk_total = outdoor = 0
@@ -50,8 +52,6 @@ def build_route(scored: list["Scored"], anchor: Anchor, at: datetime, end: datet
                 continue
             if weather is not None and outdoor > weather.max_outdoor_min * 1.5:
                 continue  # too long outside for this weather
-            if len({p.cand.subcategory for p in perm}) < k:
-                score -= 0.25
             score -= 0.004 * walk_total
             if best is None or score > best[0]:
                 best = (score, stops, walk_total, outdoor, t)

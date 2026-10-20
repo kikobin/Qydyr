@@ -45,7 +45,9 @@ function setSheet(state) {
 }
 
 function go(view, push = true) {
-  if (push && S.view !== view) S.stack.push(S.view);
+  const at = S.stack.lastIndexOf(view);
+  if (push && at >= 0) S.stack.length = at;          // results ⇄ machine ⇄ results is a step back, not three forward
+  else if (push && S.view !== view) S.stack.push(S.view);
   S.view = view;
   T.backButton(S.stack.length > 0);
   renderSheet();
@@ -182,7 +184,7 @@ function viewHome() {
     <div class="actions"><button class="btn sun" style="flex:1" data-act="surprise">${I.dice()}${esc(t.surprise)}</button>
       <button class="btn" style="flex:1" data-act="machine">${I.clock()}${esc(t.machine)}</button></div>
     ${S.walks !== undefined && (S.walks === null || S.walks.length) ? `<h3 class="sec">${esc(S.tours && S.tours.length ? W().nearby_walks : t.walks)}</h3>${walks}` : ""}
-    <div class="actions"><label class="btn" style="flex:1;cursor:pointer">${I.camera()}${esc(t.photo)}<input id="photo" type="file" accept="image/*" capture="environment" class="sr-only"></label></div>
+    ${S.config && S.config.llm ? `<div class="actions"><label class="btn" style="flex:1;cursor:pointer">${I.camera()}${esc(t.photo)}<input id="photo" type="file" accept="image/*" capture="environment" class="sr-only"></label></div>` : ""}
     ${S.config && S.config.bot_username ? `<button class="mini" data-act="friends">${I.people()}<span style="display:flex;flex-direction:column;gap:2px"><span class="t">${esc(t.friends)}</span><span class="meta" style="font-family:var(--font-body)">${esc(t.friends_sub)}</span></span>${I.chev("i-s")}</button>` : ""}
     <div class="actions"><button class="btn" style="flex:1" data-act="saved">${I.bookmark()}${esc(t.saved)}</button>
       <button class="btn" data-act="lang" aria-label="${esc(t.lang)}">${I.globe()}${{ ru: "Рус", kk: "Қаз", en: "Eng" }[S.lang]}</button></div>
@@ -289,10 +291,10 @@ function viewPlace() {
 
 function serverNow() { return S.config && S.config.now ? new Date(S.config.now) : new Date(); }
 
-function slots() {
+function slots() {   // "now", then every half hour after it: the first tick is the current time, the next one 19:30
   const now = serverNow();
-  const start = new Date(Math.ceil(now.getTime() / (30 * 60000)) * 30 * 60000);
-  return Array.from({ length: 29 }, (_, k) => new Date(start.getTime() + k * 30 * 60000));
+  const start = (Math.floor(now.getTime() / (30 * 60000)) + 1) * 30 * 60000;
+  return [now, ...Array.from({ length: 28 }, (_, k) => new Date(start + k * 30 * 60000))];
 }
 
 function viewMachine() {
@@ -524,6 +526,7 @@ function arrive(id, visited) {
   T.haptic.ok();
   map.showTour(S.tour, tourMapOpts({ fit: false }));
   if (S.view !== "walk") go("walk"); else renderSheet();
+  if (!k.sim) setSheet("full");
   $("#sheet .body").scrollTop = 0;
   saveWalk();
   maybeNudges(st.lat, st.lon, true);   // what is on right here (an evening exhibition inside, a concert next door)
@@ -542,6 +545,7 @@ function nextFromStop() {
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   k.speaking = false;
   k.current = null;
+  if (!k.sim && S.sheet === "full") setSheet("half");
   if (!k.next) { finishWalk(); return; }
   if (k.pos) {
     const st = S.tour.stops_list.find((x) => x.id === k.next);
@@ -591,10 +595,11 @@ async function maybeNudges(lat, lon, force = false) {
     if (S.walk !== k) return;
     if (r.weather) S.wx = r.weather;
     // one hint per event or place: a newer one (closer, fresher time) replaces the old instead of piling up
+    // the hints are for where you are now: the server answers for a ~450 m circle, older ones go away
     const key = (x) => `${x.kind}:${x.event_id || x.place_id || x.text}`;
     const seen = new Set(k.nudges.map(key));
     const fresh = r.nudges.filter((x) => !seen.has(key(x)));
-    const merged = [...r.nudges, ...k.nudges.filter((x) => !r.nudges.some((y) => key(y) === key(x)))].slice(0, 2);
+    const merged = r.nudges.slice(0, 2);
     const changed = JSON.stringify(merged.map((x) => x.text)) !== JSON.stringify(k.nudges.map((x) => x.text));
     k.nudges = merged;
     if (fresh.length) T.haptic.tap();
@@ -637,8 +642,9 @@ function finishWalk() {
   const k = S.walk;
   if (!k) return;
   const tr = S.tour;
+  const share = k.visited.length / Math.max(1, tr.stops_list.length);   // the demo's minutes: the part of the tour walked
   S.walkDone = { tourId: tr.id, title: tr.title, stops: k.visited.length, facts: k.facts,
-                 min: k.sim ? (tr.duration_min || 1) : Math.max(1, Math.round((Date.now() - k.startedAt) / 60000)) };
+                 min: k.sim ? Math.max(1, Math.round((tr.duration_min || 1) * share)) : Math.max(1, Math.round((Date.now() - k.startedAt) / 60000)) };
   stopWalk();
   if (tr.kind === "tour") { S.saved = null; T.store.set("walk", ""); }
   map.showTour(tr, { ...tourMapOpts(), visited: tr.stops_list.map((x) => x.id), next: null, fit: true });
@@ -687,7 +693,11 @@ function show(answer, { view } = {}) {
   fx && fx.set((answer.context && answer.context.simulated) ? S.preset : null);
 }
 
+let surprising = false;
 async function surprise() {
+  if (surprising) return;
+  surprising = true;
+  $("#q").value = "";
   T.haptic.bump();
   const wrap = document.createElement("div");
   wrap.className = "asyq-wrap";
@@ -705,6 +715,8 @@ async function surprise() {
   } catch (e) {
     wrap.remove();
     toast(S.t.net_error);
+  } finally {
+    surprising = false;
   }
 }
 
@@ -719,7 +731,7 @@ function openChipMenu(btn, chip) {
   m.setAttribute("role", "menu");
   m.innerHTML = chip.options.map((o, i) => `<button role="menuitemradio" aria-checked="${o.selected ? "true" : "false"}" data-o="${i}">${esc(o.label)}${o.selected ? I.check("i-s") : ""}</button>`).join("");
   const r = btn.getBoundingClientRect();
-  m.style.left = `${Math.min(r.left, window.innerWidth - 220)}px`;
+  m.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 220))}px`;
   m.style.top = `${r.bottom + 6}px`;
   m.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-o]");
@@ -732,9 +744,18 @@ function openChipMenu(btn, chip) {
     ask();
   });
   $("#app").append(m);
-  setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
+  armMenuClose();
 }
-function closeMenu() { document.querySelectorAll(".chip-menu").forEach((m) => m.remove()); }
+let menuOff = null;
+function armMenuClose() {
+  setTimeout(() => { menuOff = (e) => { if (!e.target.closest(".chip-menu")) closeMenu(); }; document.addEventListener("click", menuOff); }, 0);
+}
+function closeMenu() {
+  const open = document.querySelectorAll(".chip-menu");
+  open.forEach((m) => m.remove());
+  if (menuOff) { document.removeEventListener("click", menuOff); menuOff = null; }
+  return open.length > 0;
+}
 function merge(ov, patch) {
   const out = { ...ov };
   for (const [k, v] of Object.entries(patch)) {
@@ -770,7 +791,7 @@ function openChipMenuLike(btn, opts) {
   m.style.top = `${Math.max(8, r.top - opts.length * 46 - 16)}px`;
   m.addEventListener("click", (e) => { const b = e.target.closest("button[data-o]"); if (b) { closeMenu(); T.openLink(opts[+b.dataset.o].url); } });
   $("#app").append(m);
-  setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
+  armMenuClose();
 }
 
 function shareText(it) {
@@ -778,7 +799,9 @@ function shareText(it) {
 }
 async function shareItem(it) {
   const bot = S.config && S.config.bot_username;
-  const url = bot ? `https://t.me/${bot}?startapp=a_${S.answer.id}` : `${location.origin}${location.pathname}?answer=${S.answer.id}`;
+  const id = S.answer && S.answer.id;
+  const url = !id ? (bot ? `https://t.me/${bot}` : `${location.origin}${location.pathname}`)
+    : bot ? `https://t.me/${bot}?startapp=a_${id}` : `${location.origin}${location.pathname}?answer=${id}`;
   const res = await T.share(url, shareText(it));
   if (res === "copied") toast(S.t.shared);
 }
@@ -887,7 +910,8 @@ async function photoAsk(file) {
 }
 
 async function locate(explicit = false) {
-  const p = await T.getLocation(explicit ? 12000 : 8000);
+  let p = await T.getLocation(explicit ? 12000 : 8000);
+  if (p && !inAstana(p.lat, p.lon)) { toast(S.t.not_astana, 5200); p = null; explicit = false; }
   if (p) {
     S.loc = { lat: T.roundCoord(p.lat), lon: T.roundCoord(p.lon) };
     if (map && !["tour", "walk", "walkdone"].includes(S.view)) map.center(S.loc.lon, S.loc.lat, 14.5);   // a tour keeps its own frame
@@ -902,6 +926,8 @@ async function locate(explicit = false) {
   }
   renderTop();
 }
+
+function inAstana(lat, lon) { return lat > 50.95 && lat < 51.35 && lon > 71.1 && lon < 71.8; }
 
 async function loadWalks() {
   if (!S.loc) return;
@@ -1008,9 +1034,16 @@ function bind() {
       case "walk-next": nextFromStop(); break;
       case "walk-listen": { const k = S.walk; if (!k) break; if (k.speaking) { speechSynthesis.cancel(); k.speaking = false; renderKeep(); } else { const st = S.tour.stops_list.find((x) => x.id === k.current); if (st) speakStop(st); } break; }
       case "walk-more": storyAtStop(); break;
-      case "walk-finish": finishWalk(); break;
+      case "walk-finish": {   // a real walk cut short asks first: finishing drops the saved progress
+        const k = S.walk;
+        if (!k || k.sim || !S.tour || k.visited.length >= S.tour.stops_list.length) { finishWalk(); break; }
+        const text = W().finish_confirm;
+        if (T.tg && T.tg.showConfirm) T.tg.showConfirm(text, (ok) => { if (ok) finishWalk(); });
+        else if (window.confirm(text)) finishWalk();
+        break;
+      }
       case "walk-invite": inviteWalk(); break;
-      case "walk-again": S.walkDone = null; S.stack = []; go("home", false); T.backButton(false); break;
+      case "walk-again": S.walkDone = null; S.stack = []; map.clear(); map.mode = null; map.tourData = null; go("home", false); T.backButton(false); break;
       case "resume": if (S.saved) { const sv = S.saved; if (S.tour && S.tour.id === sv.tourId) startWalk({ resume: sv }); else openTour(sv.tourId).then(() => S.tour && startWalk({ resume: sv })); } break;
       case "link": T.openLink(b.dataset.url); break;
       case "friends": T.openLink(`https://t.me/${S.config.bot_username}?startgroup=go`); break;
@@ -1021,7 +1054,7 @@ function bind() {
   document.addEventListener("submit", (e) => {
     if (e.target.matches("[data-act=qa-form]")) { e.preventDefault(); const inp = $("#qa"); askPlace(inp.value); inp.value = ""; }
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMenu(); back(); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !closeMenu()) back(); });
   document.addEventListener("change", (e) => { if (e.target.id === "photo" && e.target.files[0]) photoAsk(e.target.files[0]); });
 
   // the sheet: drag the handle between low / half / full

@@ -27,24 +27,6 @@ export function hexagon(lon, lat, radiusM) {
   return pts;
 }
 
-// a gentle curve between stops: the straight line is an honest "as the crow flies" sketch, the curve reads as a route
-function curved(points) {
-  if (points.length < 2) return points;
-  const out = [points[0]];
-  for (let i = 1; i < points.length; i++) {
-    const [x0, y0] = points[i - 1];
-    const [x1, y1] = points[i];
-    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    const k = (i % 2 ? 0.14 : -0.14);
-    const cx = mx - (y1 - y0) * k * 1.6, cy = my + (x1 - x0) * k * 0.62;
-    for (let t = 1 / 16; t <= 1.0001; t += 1 / 16) {
-      const a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
-      out.push([a * x0 + b * cx + c * x1, a * y0 + b * cy + c * y1]);
-    }
-  }
-  return out;
-}
-
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;

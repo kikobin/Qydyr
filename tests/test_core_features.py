@@ -136,7 +136,7 @@ def test_smog_blocks_outdoor_walks(assistant):
     assert any("Воздух очень плохой" in n for n in ans.notes)
     assert ans.context.air.band == "очень плохой" and ans.context.comfort.level == 0
     assert any(r.reason_code == "weather" and "воздух" in r.reason for r in ans.rejected)
-    assert any("воздух: Open-Meteo, CAMS" in u for u in ans.used_data)
+    assert any("воздух: из файла (демо)" in u for u in ans.used_data)  # a demo file is not "Open-Meteo"
 
 
 def test_leave_by_for_an_event_starting_soon(assistant):

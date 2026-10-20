@@ -81,25 +81,43 @@ def parse(data: dict, at: datetime) -> Air:
 
 
 _CACHE: dict[tuple, tuple[float, dict]] = {}
+FILE_SOURCE = "из файла (демо)"
+TIMEOUT_S = 3        # a hanging Open-Meteo must not hold every answer for 10 s
+FAIL_TTL_S = 300     # after a failure, the cell answers "no data" for 5 minutes instead of retrying per call
+
+
+def cached_json(cache: dict, key: tuple, url: str, params: dict, ttl_s: int) -> dict:
+    """GET with a per-cell cache that also remembers failures: five walks built at once fetch once."""
+    hit = cache.get(key)
+    if hit and _time.time() - hit[0] < (ttl_s if hit[1] is not None else FAIL_TTL_S):
+        if hit[1] is None:
+            raise RuntimeError(f"{url} failed less than {FAIL_TTL_S // 60} min ago")
+        return hit[1]
+    try:
+        r = httpx.get(url, params=params, timeout=TIMEOUT_S, headers={"User-Agent": settings.USER_AGENT})
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        cache[key] = (_time.time(), None)
+        raise
+    cache[key] = (_time.time(), data)
+    return data
 
 
 def fetch(lat: float, lon: float, ttl_s: int = 1800) -> dict:
     key = (round(lat, 1), round(lon, 1))  # the model grid is ~11–45 km: exact coordinates are useless here
-    if key in _CACHE and _time.time() - _CACHE[key][0] < ttl_s:
-        return _CACHE[key][1]
     params = {"latitude": key[0], "longitude": key[1], "timezone": settings.TZ_NAME, "forecast_days": 2,
               "current": "pm2_5,pm10,european_aqi", "hourly": "pm2_5,pm10,european_aqi"}
-    r = httpx.get(AIR_URL, params=params, timeout=10, headers={"User-Agent": settings.USER_AGENT})
-    r.raise_for_status()
-    data = r.json()
-    _CACHE[key] = (_time.time(), data)
-    return data
+    return cached_json(_CACHE, key, AIR_URL, params, ttl_s)
 
 
 def get(lat: float, lon: float, at: datetime, from_file: Path | None = None) -> Air | None:
     try:
         data = json.loads(from_file.read_text(encoding="utf-8")) if from_file else fetch(lat, lon)
-        return parse(data, at)
+        air = parse(data, at)
+        if from_file:
+            air.source = FILE_SOURCE
+        return air
     except Exception as e:
         log.warning("air quality unavailable: %s", e)
         return None

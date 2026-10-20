@@ -30,4 +30,29 @@ scenarios:
 
   - id: brief_example_expo
     text: "Я у здании Экспо 2017, хочу что-то необычное на 1–2 часа, пешком."
-    expect: {anchor_contains: "Нур Алем"}
+    expect: {anchor_contains: "EXPO"}   # in OpenStreetMap the Nur Alem sphere is named "EXPO"
+
+  # Places people name in their own words (the review on real data): case forms, Kazakh, OSM copies.
+  - id: anchor_mega_with_kid
+    text: "я у Mega Silk Way с ребёнком 5 лет, есть 2 часа"
+    expect: {anchor_contains: "Mega"}
+
+  - id: anchor_pyramid_case
+    text: "я у Пирамиды, что посмотреть рядом?"
+    expect: {anchor_contains: "Бейбітшілік", min_items: 1}
+
+  - id: anchor_national_museum_case
+    text: "я у Национального музея, есть 2 часа"
+    expect: {anchor_contains: "Мұражай", min_items: 1}
+
+  - id: anchor_kazakh_postposition
+    text: "Бәйтерек жанындамын, бір сағат бар"
+    expect: {anchor_contains: "Бәйтерек", min_items: 1}
+
+  - id: anchor_after_another_preposition
+    text: "хочу на концерт, я у Байтерека"
+    expect: {anchor_contains: "Бәйтерек"}
+
+  - id: flight_from_mega_to_nqz
+    text: "я в Мега Силк Уэй, до вылета 2 часа"
+    expect: {anchor_contains: "Mega", note_contains: "дорога в аэропорт ~2"}

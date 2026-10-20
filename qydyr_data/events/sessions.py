@@ -80,6 +80,8 @@ def build_sessions(ev: ExtractedEvent, kind: str, *, venue_hours: str | None, to
         return _dedup(out)
 
     multi_day = (d1 and d2 and d2 > d1) or (d2 and not d1)
+    if multi_day and kind in VENUE_HOURS_KINDS and t1 and not t2:
+        t1 = None  # "открытие 9 октября в 16:00" is the vernissage, not a daily 16:00–18:00 window
     if multi_day or (ev.schedule_opening_hours and not t1):
         # 2. a period: one window per day
         start_day = max(d1 or today, today)

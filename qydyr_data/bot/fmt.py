@@ -1,5 +1,6 @@
 """Answer (the API's JSON) -> Telegram HTML and keyboards. Pure functions: no network, easy to test.
-Keyboards are lists of rows of plain dicts; `markup()` turns them into aiogram objects."""
+Keyboards are lists of rows of plain dicts; `markup()` turns them into aiogram objects.
+Labels come from texts.py; the data itself (statuses, reasons, facts) is shown as the API gave it."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -7,12 +8,10 @@ from html import escape
 from urllib.parse import urlsplit
 
 from .. import settings
-from .texts import t
+from .texts import T, plural, t
 
 WEEKDAYS = {"ru": ["пн", "вт", "ср", "чт", "пт", "сб", "вс"], "kk": ["дс", "сс", "ср", "бс", "жм", "сб", "жс"],
             "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-SRC = {"data": "из афиши", "idea": "идея ассистента"}
-CONF = lambda c: "высокая" if c >= 0.75 else "средняя" if c >= 0.5 else "низкая"  # noqa: E731
 
 
 def dt(s: str | None) -> datetime | None:
@@ -29,18 +28,80 @@ def host(u: str) -> str:
     return "OpenStreetMap" if "openstreetmap" in h else h or u
 
 
-def walk_text(it: dict) -> str:
+def in_astana(lat: float, lon: float) -> bool:
+    s, w, n, e = settings.ASTANA_BBOX
+    return s <= lat <= n and w <= lon <= e
+
+
+def conf(c: float, lang: str = "ru") -> str:
+    return t(lang, "conf_high" if c >= 0.75 else "conf_medium" if c >= 0.5 else "conf_low")
+
+
+def walk_text(it: dict, lang: str = "ru") -> str:
     if it["walk_min"] == 0:
-        return "прямо здесь"
-    return f"{it['walk_min']} мин {'на такси' if it.get('by') == 'taxi' else 'пешком'}"
+        return t(lang, "right_here")
+    return t(lang, "by_taxi" if it.get("by") == "taxi" else "by_walk", n=it["walk_min"])
 
 
-def understood(ans: dict) -> str:
-    return " · ".join(c["label"] + ("?" if c["assumed"] else "") for c in ans["chips"] if c["active"]
-                      and c["kind"] != "place")
+def minutes(m: int, lang: str = "ru") -> str:
+    """A time budget: 30 мин, 1,5 ч / 1.5 h."""
+    if m < 60:
+        return t(lang, "min", n=m)
+    h = f"{m / 60:g}"
+    return f"{h if lang == 'en' else h.replace('.', ',')} {t(lang, 'h')}"
 
 
-def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False) -> str:
+def chip_label(c: dict, ans: dict, lang: str = "ru") -> str:
+    """Interface chips in the interface language; needs (кофе, тихо) stay as the API gave them."""
+    if lang == "ru":
+        return c["label"]
+    it, k = ans.get("intent") or {}, c["key"]
+    if k == "kids":
+        return t(lang, "chip_kids")
+    if k == "only_events":
+        return t(lang, "chip_events")
+    if k == "wheelchair":
+        return t(lang, "chip_wheelchair")
+    if k == "group" and it.get("group_size"):
+        return t(lang, "chip_group", n=it["group_size"])
+    if k == "mode" and it.get("mode") in ("walk", "taxi", "any"):
+        return t(lang, f"mode_{it['mode']}")
+    if k == "budget":
+        x = c["label"]
+        up = x.startswith("до ")
+        x = (x[3:] if up else x).replace(" мин", " min" if lang == "en" else " мин").replace(" ч", " " + t(lang, "h"))
+        return t(lang, "upto", x=x) if up else x
+    return c["label"]
+
+
+def option_label(c: dict, o: dict, lang: str = "ru") -> str:
+    p = o.get("patch") or {}
+    if lang != "ru" and c["key"] == "budget" and p.get("budget_max"):
+        return minutes(p["budget_max"], lang)
+    if lang != "ru" and c["key"] == "mode" and p.get("mode") in ("walk", "taxi"):
+        return t(lang, f"mode_{p['mode']}")
+    return o["label"]
+
+
+def understood(ans: dict, lang: str = "ru") -> str:
+    return " · ".join(chip_label(c, ans, lang) + ("?" if c["assumed"] else "") for c in ans["chips"]
+                      if c["active"] and c["kind"] != "place")
+
+
+def funnel_text(x: dict, lang: str = "ru") -> str:
+    key = f"funnel_{x['key']}"
+    return plural(lang, x["n"], t(lang, key)) if key in T["ru"] else x["label"]
+
+
+def anchor_label(ans: dict, lang: str = "ru", gps_age: int | None = None) -> str:
+    a = ans.get("anchor") or {}
+    if a.get("source") == "gps":
+        return t(lang, "gps_age", n=gps_age) if gps_age else t(lang, "gps_label")
+    return a.get("label", "")
+
+
+def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False, gps_age: int | None = None) -> str:
+    """gps_age: minutes since the session's location was shared, shown in the header ("15 мин назад")."""
     e = escape
     at = dt(ans["at"])
     head = [f"{WEEKDAYS.get(lang, WEEKDAYS['ru'])[at.weekday()]} {at:%H:%M}"]
@@ -49,48 +110,49 @@ def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False) -> str:
     if w:
         head.append(f"{w['temp_c']:+.0f}°, {w['level']}")
         if w.get("sunset"):
-            head.append(f"закат {hm(w['sunset'])}")
+            head.append(t(lang, "sunset", time=hm(w["sunset"])))
     lines = [f"<b>{e(' · '.join(head))}</b>"]
-    if ans.get("anchor") and ans["anchor"]["source"] != "gps":
-        lines[0] = f"<b>{e(ans['anchor']['label'])}</b> · " + lines[0]
+    if ans.get("anchor"):
+        lines[0] = f"<b>{e(anchor_label(ans, lang, gps_age))}</b> · " + lines[0]
     if ctx.get("simulated"):
-        lines.append(f"<i>Симуляция: {e(ctx['simulated'])}. Места, часы работы и события настоящие.</i>")
-    u = understood(ans)
+        lines.append(f"<i>{e(t(lang, 'simulated', what=ctx['simulated']))}</i>")
+    u = understood(ans, lang)
     if u:
-        lines.append(f"Понял так: {e(u)}")
+        lines.append(e(t(lang, "understood", u=u)))
     notes = [n for n in ans.get("notes", []) if not n.startswith("Симуляция")]
     for n in notes[:3]:
         lines.append(f"<i>{e(n)}</i>")
     for i, it in enumerate(ans["items"], 1):
         lines.append("")
-        lines.append(f"<b>{i}. {e(it['title'])}</b> — {e(walk_text(it))}")
+        lines.append(f"<b>{i}. {e(it['title'])}</b> — {e(walk_text(it, lang))}")
         lines.append(e(it["status"]))
         if it.get("leave_by"):
             lb = dt(it["leave_by"])
-            lines.append("<b>Выходите сейчас</b>" if lb <= dt(ans["at"]) + timedelta(minutes=1)
-                         else f"<b>Выходите до {lb:%H:%M}</b>")
+            lines.append(f"<b>{e(t(lang, 'leave_now'))}</b>" if lb <= dt(ans["at"]) + timedelta(minutes=1)
+                         else f"<b>{e(t(lang, 'leave_by', time=f'{lb:%H:%M}'))}</b>")
         details = []
         if it.get("why"):
-            details.append(f"Почему: {e('; '.join(it['why']))}")
+            details.append(f"{t(lang, 'why')}: {e('; '.join(it['why']))}")
         if it.get("group_fit"):
-            details.append("Каждому: " + e(" · ".join(it["group_fit"])))
+            details.append(f"{t(lang, 'everyone')}: " + e(" · ".join(it["group_fit"])))
         lo, hi = it["visit_min"]
-        details.append(f"Сколько: {lo if lo == hi else f'{lo}–{hi}'} мин")
-        details.append(f"Что делать ({SRC[it['what_to_do_source']]}): {e(it['what_to_do'])}")
+        details.append(f"{t(lang, 'how_long')}: {e(t(lang, 'min', n=lo if lo == hi else f'{lo}–{hi}'))}")
+        src = t(lang, f"src_{it['what_to_do_source']}")
+        details.append(f"{e(t(lang, 'what_to_do', src=src))}: {e(it['what_to_do'])}")
         if it.get("warnings"):
-            details.append(f"Внимание: {e('; '.join(it['warnings']))}")
-        src = ", ".join(dict.fromkeys(host(s) for s in it.get("sources", []))) or "OpenStreetMap"
-        details.append(f"Источник: {e(src)} · уверенность {CONF(it['confidence'])}")
+            details.append(f"{t(lang, 'warning')}: {e('; '.join(it['warnings']))}")
+        hosts = ", ".join(dict.fromkeys(host(s) for s in it.get("sources", []))) or "OpenStreetMap"
+        details.append(e(t(lang, "source", src=hosts, conf=conf(it["confidence"], lang))))
         if compact and i > 1:
             continue
         lines.append("<blockquote expandable>" + "\n".join(details) + "</blockquote>")
-    if not ans["items"]:
+    if not ans["items"] and not notes:   # the "nothing fits" note is already printed above
         lines.append("")
-        lines.append(e(ans["notes"][-1]) if ans.get("notes") else "Рядом ничего не подошло.")
+        lines.append(e(t(lang, "nothing_fits")))
     r = ans.get("route")
     if r and not compact:
         lines.append("")
-        lines.append(f"<b>Мини-маршрут на {r['total_min']} мин</b> (на улице ~{r['outdoor_min']} мин)")
+        lines.append(f"<b>{e(t(lang, 'mini_route', total=r['total_min']))}</b> ({e(t(lang, 'outdoor', n=r['outdoor_min']))})")
         for s in r["stops"]:
             lines.append(f"{hm(s['arrive_at'])}–{hm(s['leave_at'])}  {e(s['title'])}")
     for g in ans.get("group_notes", []):
@@ -98,35 +160,36 @@ def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False) -> str:
     f = ans.get("funnel") or []
     if f:
         lines.append("")
-        lines.append("<i>Как выбирал: " + e(" → ".join(f"{x['n']} {x['label']}" for x in f)) + "</i>")
+        lines.append(f"<i>{e(t(lang, 'how_chosen'))}: " + e(" → ".join(f"{x['n']} {funnel_text(x, lang)}" for x in f)) + "</i>")
     if ans.get("anchor") and ans["anchor"]["source"] == "gps":
         lines.append(f"<i>{e(t(lang, 'privacy'))}</i>")
     return "\n".join(lines)
 
 
-def item_html(ans: dict, i: int) -> str:
+def item_html(ans: dict, i: int, lang: str = "ru") -> str:
     """One recommendation as a self-contained message (inline mode, group result)."""
     e = escape
     it = ans["items"][i]
-    lines = [f"<b>{e(it['title'])}</b> — {e(walk_text(it))}", e(it["status"])]
+    lines = [f"<b>{e(it['title'])}</b> — {e(walk_text(it, lang))}", e(it["status"])]
     if it.get("why"):
-        lines.append(f"Почему: {e('; '.join(it['why'][:2]))}")
-    lines.append(f"Что делать ({SRC[it['what_to_do_source']]}): {e(it['what_to_do'])}")
-    where = ans["anchor"]["label"] if ans.get("anchor") else ""
-    lines.append(f"<i>Qydyr · от «{e(where)}» · {hm(ans['at'])}</i>" if where else f"<i>Qydyr · {hm(ans['at'])}</i>")
+        lines.append(f"{t(lang, 'why')}: {e('; '.join(it['why'][:2]))}")
+    src = t(lang, f"src_{it['what_to_do_source']}")
+    lines.append(f"{e(t(lang, 'what_to_do', src=src))}: {e(it['what_to_do'])}")
+    where = ans["anchor"]["label"] if ans.get("anchor") and ans["anchor"]["source"] != "gps" else ""
+    lines.append(f"<i>{e(t(lang, 'item_from', place=where, time=hm(ans['at'])))}</i>" if where
+                 else f"<i>Qydyr · {hm(ans['at'])}</i>")
     return "\n".join(lines)
 
 
 def why_not_html(ans: dict, lang: str = "ru") -> str:
     rows = [f"<b>{escape(t(lang, 'why_not').rstrip('?'))}</b>"]
     for x in ans.get("funnel") or []:
-        rows.append(f"{x['n']:>4}  {escape(x['label'])}")
+        rows.append(f"{x['n']:>4}  {escape(funnel_text(x, lang))}")
     if ans.get("rejected"):
         rows.append("")
         rows += [f"<b>{escape(r['title'])}</b> — {escape(r['reason'])}" for r in ans["rejected"][:7]]
     rows.append("")
-    rows.append("<i>Выбирает алгоритм по фактам: часы работы, расстояние, погода, события. "
-                "Claude только понимает запрос и читает афиши.</i>")
+    rows.append(f"<i>{escape(t(lang, 'why_not_footer'))}</i>")
     return "\n".join(rows)
 
 
@@ -136,27 +199,30 @@ def _cb(text: str, data: str) -> dict:
 
 def answer_keyboard(ans: dict, lang: str = "ru", *, private: bool = True, webapp_url: str | None = None,
                     bot_username: str | None = None) -> list[list[dict]]:
+    """In a group the chips are left out: they would change the shared answer but not the poll under it.
+    The map button needs the Mini App: no HTTPS address, no button."""
     aid = ans["id"]
     rows: list[list[dict]] = []
     items = ans["items"]
     if items:
-        rows.append([_cb(t(lang, "route", n=i + 1) if len(items) > 1 else "Маршрут", f"m:{aid}:{i}")
+        rows.append([_cb(t(lang, "route", n=i + 1) if len(items) > 1 else t(lang, "route_one"), f"m:{aid}:{i}")
                      for i in range(len(items))])
     row = []
     if webapp_url and private:
         row.append({"text": t(lang, "map"), "web_app": {"url": f"{webapp_url}?answer={aid}"}})
-    elif bot_username:
+    elif webapp_url and bot_username:
         row.append({"text": t(lang, "map"), "url": f"https://t.me/{bot_username}?startapp=a_{aid}"})
     if ans.get("rejected") or ans.get("funnel"):
         row.append(_cb(t(lang, "why_not"), f"w:{aid}"))
     if row:
         rows.append(row)
     chips = []
-    for ci, c in enumerate(ans["chips"]):
-        if c["key"] == "budget" or (c["key"] in ("kids", "only_events") and not c["active"]) \
-                or (c["key"] == "mode" and c["assumed"]):
-            label = f"{c['label']} · {t(lang, 'change')}" if c["key"] in ("budget", "mode") else f"+ {c['label']}"
-            chips.append(_cb(label, f"c:{aid}:{ci}"))
+    for ci, c in enumerate(ans["chips"] if private else []):
+        if c["key"] == "budget" or (c["key"] == "mode" and c["assumed"]):
+            chips.append(_cb(f"{chip_label(c, ans, lang)} · {t(lang, 'change')}", f"c:{aid}:{ci}"))
+        elif c["key"] in ("kids", "only_events"):   # a switch: "+ с ребёнком" on, "✕ с ребёнком" off
+            chips.append(_cb(t(lang, "chip_remove" if c["active"] else "chip_add", label=chip_label(c, ans, lang)),
+                             f"c:{aid}:{ci}"))
     for k in range(0, len(chips), 2):
         rows.append(chips[k:k + 2])
     if items:
@@ -168,17 +234,37 @@ def chip_keyboard(ans: dict, ci: int, lang: str = "ru") -> list[list[dict]]:
     aid, chip = ans["id"], ans["chips"][ci]
     if chip["key"] in ("kids", "only_events", "wheelchair") or len(chip["options"]) == 1:
         return []  # a switch: applied at once
-    opts = [_cb(("· " if o["selected"] else "") + o["label"], f"c:{aid}:{ci}:{oi}") for oi, o in enumerate(chip["options"])]
+    opts = [_cb(("· " if o["selected"] else "") + option_label(chip, o, lang), f"c:{aid}:{ci}:{oi}")
+            for oi, o in enumerate(chip["options"])]
     rows = [opts[k:k + 3] for k in range(0, len(opts), 3)]
     rows.append([_cb(t(lang, "back"), f"k:{aid}")])
     return rows
 
 
 def route_keyboard(lat: float, lon: float, lang: str = "ru") -> list[list[dict]]:
-    links = {"2ГИС": f"https://2gis.kz/astana/directions/points/%7C{lon}%2C{lat}",
-             "Яндекс Карты": f"https://yandex.kz/maps/?rtext=~{lat},{lon}&rtt=pd",
-             "Google Maps": f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=walking"}
-    return [[{"text": t(lang, "open_in", app=name), "url": url}] for name, url in links.items()]
+    names = t(lang, "maps").split("|")
+    urls = [f"https://2gis.kz/astana/directions/points/%7C{lon}%2C{lat}",
+            f"https://yandex.kz/maps/?rtext=~{lat},{lon}&rtt=pd",
+            f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=walking"]
+    return [[{"text": t(lang, "open_in", app=name), "url": url}] for name, url in zip(names, urls)]
+
+
+def poll_options(items: list[dict], lang: str = "ru") -> list[str]:
+    """Telegram rejects a poll with two equal options: "Детская площадка · 7 мин пешком", numbered if still equal."""
+    opts = [it["title"][:100] for it in items]
+    opts = [f"{o} · {walk_text(it, lang)}"[:100] if opts.count(o) > 1 else o for o, it in zip(opts, items)]
+    if len(set(opts)) < len(opts):
+        opts = [f"{i}. {o}"[:100] for i, o in enumerate(opts, 1)]
+    return opts
+
+
+def walk_route_url(stops: list[dict]) -> str | None:
+    """All stops of a walk as one Google Maps walking route (from wherever the person is now)."""
+    pts = [f"{s['lat']},{s['lon']}" for s in stops if s.get("lat") is not None][:10]
+    if not pts:
+        return None
+    url = f"https://www.google.com/maps/dir/?api=1&destination={pts[-1]}&travelmode=walking"
+    return url + (f"&waypoints={'%7C'.join(pts[:-1])}" if len(pts) > 1 else "")
 
 
 def markup(rows: list[list[dict]]):

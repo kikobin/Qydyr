@@ -36,7 +36,7 @@ NEED_PATTERNS: dict[str, str] = {
     "photo": r"фото|сфоткаться|фотосесс|инстаграм|instagram|\bинст\b|photo|достопримечат|что посмотреть|"
              r"посмотреть поблизости|sightseeing",
     "unusual": r"необычн|интересн|удиви|что-то новое|нестандартн|unusual|unique|weird|ерекше",
-    "night": r"ночн|ночью|поздно|после полуночи|\bnight\b|\blate\b|түнгі|түнде",
+    "night": r"ночн|ночью|\bночи\b|поздно|после полуночи|\bnight\b|\blate\b|түнгі|түнде",
     "nightlife": r"\bбар\b|\bбары\b|\bбаре\b|клуб|вечеринк|туса|nightlife|party|\bbar\b",
     "free": r"бесплатн|без денег|\bfree\b|тегін",
     "indoor": r"в помещени|внутри|под крышей|погреться|согреться|не мерзнуть|не мёрзнуть|indoor|жылы жер",
@@ -48,8 +48,28 @@ NEED_PATTERNS: dict[str, str] = {
              r"мюзикл|\bопер[аеуы]\b|балет|\bgig\b|\bshow\b",
 }
 _NEED_RE = {k: re.compile(v, re.I) for k, v in NEED_PATTERNS.items()}
+# "хочу на концерт" is not "any event": the kind narrows what counts (a kids' show is not a concert)
+EVENT_KIND_PATTERNS: dict[str, str] = {
+    "concert": r"концерт|\bgig\b|concert", "standup": r"стендап|стенд-ап|stand-?up|комик",
+    "exhibition": r"выставк|exhibition|көрме", "performance": r"спектакл|мюзикл|\bопер[аеуы]\b|балет|performance",
+    "film": r"\bкино\b|фильм|кинопоказ|киноужин|\bmovie", "lecture": r"лекци|lecture",
+    "workshop": r"мастер-класс|мастер класс|workshop", "festival": r"фестивал|festival",
+    "party": r"вечеринк|\bparty\b", "excursion": r"экскурси|excursion",
+}
+_KIND_RE = {k: re.compile(v, re.I) for k, v in EVENT_KIND_PATTERNS.items()}
+
+
+def event_kind_fits(e: dict, kinds: list[str]) -> bool:
+    """The listing's kind is a guess too: "Концерт «Хиты на все времена»" filed as "other" is still a concert."""
+    return not kinds or e.get("kind") in kinds or any(_KIND_RE[k].search(e.get("title") or "") for k in kinds)
 
 ANCHOR_PREPS = r"(?:возле|около|рядом с|у|в районе|недалеко от|напротив|в|на|из|near|at|in|by|from)"
+HERE_PREPS = {"возле", "около", "рядом с", "у", "в районе", "недалеко от", "напротив", "near", "at", "by"}
+# "хочу в Хан Шатыр" is where to go, "кофе в Хан Шатыре" is where the person is
+MOTION_BEFORE = re.compile(r"(?:хочу|хотим|хочется|пойти|пойду|пойд[её]м|сходить|схожу|сходим|поехать|поеду|"
+                           r"поедем|ехать|еду|едем|идти|иду|ид[её]м|попасть|go|going|get|want|to)\s*$", re.I)
+KK_POSTPOSITIONS = re.compile(r"([\w-]+(?:\s+[\w-]+){0,3})\s+(?:жанында|қасында|маңында|алдында|ішінде|"
+                              r"жанына|қасына)\w*", re.I)
 STOP_WORDS = {"меня", "нас", "тебя", "вас", "него", "неё", "нее", "них", "ребенка", "ребёнка", "детьми",
               "ребенком", "ребёнком", "час", "часа", "минут", "наличии", "запасе", "городе", "астане",
               "astana", "astane", "течение", "итоге", "общем", "целом", "свободное", "свободном", "my", "the"}
@@ -67,6 +87,17 @@ def _num(s: str) -> float:
     return float(s.replace(",", "."))
 
 
+NUM_WORDS = {"один": 1, "одного": 1, "полтора": 1.5, "два": 2, "две": 2, "три": 3, "четыре": 4, "пять": 5,
+             "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "бір": 1, "екі": 2, "үш": 3, "төрт": 4, "бес": 5}
+_NUM = "|".join(NUM_WORDS)
+_CLOCK_BEFORE = re.compile(r"(?:\bв|\bк|\bдо|\bс|\bпосле|\bat|\buntil|\bby|\bсағат)\s*$")
+
+
+def _hours(t: str, pattern: str) -> re.Match | None:
+    """First "N часа" that is an amount of time, not a clock time ("в 2 часа ночи")."""
+    return next((m for m in re.finditer(pattern, t) if not _CLOCK_BEFORE.search(t[:m.start()])), None)
+
+
 def parse_budget(text: str) -> tuple[int | None, int | None]:
     t = text.lower()
     m = re.search(r"(\d+(?:[.,]\d)?)\s*[–—-]\s*(\d+(?:[.,]\d)?)\s*(час|ч\b|hour|сағат)", t)
@@ -75,9 +106,14 @@ def parse_budget(text: str) -> tuple[int | None, int | None]:
     m = re.search(r"(\d+)\s*[–—-]\s*(\d+)\s*(мин|min|минут)", t)
     if m:
         return int(m[1]), int(m[2])
-    m = re.search(r"(\d+(?:[.,]\d)?)\s*(час|ч\b|hour|сағат)", t)
+    m = _hours(t, r"(\d+(?:[.,]\d)?)\s*(час|ч\b|hour|сағат)")
     if m:
         v = int(_num(m[1]) * 60)
+        return v, v
+    # "два часа", "two hours", "екі сағат", and the casual "часа два" (about two hours)
+    m = _hours(t, rf"\b({_NUM})\s+(?:час|hour|сағат)") or re.search(rf"\bчас(?:а|ов)\s+({_NUM}|\d)\b(?!\s*(?:ноч|утр|дня|вечер))", t)
+    if m:
+        v = round((NUM_WORDS.get(m[1]) or _num(m[1])) * 60)
         return v, v
     m = re.search(r"(\d+)\s*(мин|min|минут)", t) or re.search(r"(?:минут|минуты)\s+(\d+)", t)  # "минут 40"
     if m:
@@ -115,14 +151,28 @@ def parse_weekday(low: str) -> int | None:
     return 5 if re.search(r"выходн|weekend|демалыс", low) else None
 
 
+_NOT_HOUR = r"(?![:.,]\d|\s*(?:мин|min|человек|чел|раз|лет|год|км|м\b|%|тыс|тг|тенге))"
+
+
+def _clock_hour(h: int, part: str | None = None) -> int:
+    """"7 вечера" -> 19, "2 ночи" -> 2; a bare "в 7" is 19:00: nobody plans a walk at 7 am without saying so."""
+    if part in ("вечера", "дня"):
+        return h % 12 + 12
+    if part in ("утра", "ночи"):
+        return h % 12
+    return h + 12 if 1 <= h <= 7 else h % 24
+
+
 def parse_start(low: str) -> tuple[time | None, int]:
     """When the person plans to go: "в 19:30", "в 7 вечера", "вечером", "завтра". Not "до 19:00" (a deadline)."""
     days = 1 if re.search(r"завтра|tomorrow|ертең", low) else 0
     if m := re.search(r"(?:\bв|\bк|\bна|\bat|\bсағат)\s+(\d{1,2})[:.](\d{2})\b", low):
         return time(int(m[1]) % 24, int(m[2])), days
-    if m := re.search(r"\bв\s+(\d{1,2})\s*(?:час\w*\s+)?(вечера|дня|утра)", low):
-        h = int(m[1]) % 12 + (12 if m[2] in ("вечера", "дня") else 0)
-        return time(h % 24, 0), days
+    if m := re.search(r"\b(?:в|к)\s+(\d{1,2})\s*(?:час\w*\s+)?(вечера|дня|утра|ночи)", low):
+        return time(_clock_hour(int(m[1]), m[2]), 0), days
+    if m := re.search(rf"(?:\bв|\bк|\bat)\s+(\d{{1,2}})(?:\s*час(?:а|ов)?)?\b{_NOT_HOUR}", low):  # "сегодня в 20"
+        if int(m[1]) <= 23:
+            return time(_clock_hour(int(m[1])), 0), days
     for pat, t in PART_OF_DAY:
         if re.search(pat, low):
             return t, days
@@ -153,6 +203,9 @@ def parse_rules(text: str) -> Intent:
     elif m := re.search(r"\bдо\s+(\d{1,2})[:.](\d{2})|\buntil\s+(\d{1,2})[:.](\d{2})", low):
         hh, mm = (m[1], m[2]) if m[1] else (m[3], m[4])
         it.deadline, it.deadline_time = "time", time(int(hh) % 24, int(mm))
+    elif m := re.search(rf"\b(?:до|until)\s+(\d{{1,2}})(?:\s*час\w*)?(?:\s+(вечера|дня|утра|ночи))?\b{_NOT_HOUR}", low):
+        if int(m[1]) <= 23:  # "до 8 вечера", "до 18"
+            it.deadline, it.deadline_time = "time", time(_clock_hour(int(m[1]), m[2]), 0)
 
     it.start_time, it.start_days = parse_start(low)
     it.start_weekday = parse_weekday(low)
@@ -171,18 +224,26 @@ def parse_rules(text: str) -> Intent:
         it.group_size = 3
 
     it.want_route = bool(re.search(r"маршрут|route|по пути", low)) or (it.budget_max or 0) >= 90
-    it.anchor_text = _anchor_candidate(t)
+    it.event_kinds = [k for k, rx in _KIND_RE.items() if rx.search(low)]
+    cands = anchor_candidates(t)
+    it.anchor_text = next((p for p, here in cands if here), cands[0][0] if cands else None)
     return it
 
 
-def _anchor_candidate(text: str) -> str | None:
-    """Text after a place preposition: 'я возле Mega Silk Way, хочу…' -> 'Mega Silk Way'."""
-    for m in re.finditer(rf"(?:^|[\s,(]){ANCHOR_PREPS}\s+([«\"]?[\w][^,.!?;:—–()]*)", text, re.I):
-        words = m[1].strip(" «»\"").split()
-        if not words or words[0].lower() in STOP_WORDS or words[0].isdigit():
+def anchor_candidates(text: str) -> list[tuple[str, bool]]:
+    """Every phrase that may name where the person is, in order: 'хочу на концерт, я у Байтерека' ->
+    [('концерт', False), ('Байтерека', True)]. The flag says it reads as "I am here" (у, возле, жанында,
+    "кофе в Хан Шатыре"), not as a destination ("хочу в Хан Шатыр") — only those beat a GPS point."""
+    out: list[tuple[int, str, bool]] = []
+    for m in re.finditer(rf"(?:^|(?<=[\s,(])){ANCHOR_PREPS}\s+(?=[«\"]?\w)", text, re.I):
+        prep = " ".join(m[0].lower().split())
+        words = re.split(r"[,.!?;:—–()]", text[m.end():], maxsplit=1)[0].strip(" «»\"").split()
+        if not words or words[0].lower() in STOP_WORDS or words[0].isdigit() or words[0].lower() in NUM_WORDS:
             continue
-        return " ".join(words[:5])
-    return None
+        here = prep in HERE_PREPS or (prep in ("в", "на", "in") and not MOTION_BEFORE.search(text[:m.start()]))
+        out.append((m.start(), " ".join(words[:5]), here))
+    out += [(m.start(), m[1], True) for m in KK_POSTPOSITIONS.finditer(text)]  # "Бәйтерек жанындамын"
+    return [(p, here) for _, p, here in sorted(out)]
 
 
 ASSUME_TIME = "около часа (время не указано)"

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -40,16 +41,34 @@ def _json(x: Any) -> Any:
 
 def _at(at: str | None) -> datetime | None:
     if not at:
+        if settings.DEMO_NOW:  # demo mode: the same frozen "now" as the API
+            return datetime.fromisoformat(settings.DEMO_NOW).replace(tzinfo=settings.TZ)
         return None
-    d = datetime.fromisoformat(at)
+    try:
+        d = datetime.fromisoformat(at)
+    except ValueError:
+        raise ValueError(f"at must be an ISO date-time like 2026-10-23T19:10, got {at!r}") from None
     return d if d.tzinfo else d.replace(tzinfo=settings.TZ)
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def _demo_kw() -> dict:
+    kw: dict[str, Any] = {}
+    if settings.WEATHER_FILE:
+        kw["weather_file"] = Path(settings.WEATHER_FILE)
+    if settings.AIR_FILE:
+        kw["air_file"] = Path(settings.AIR_FILE)
+    return kw
 
 
 @server.tool(description="Ask the walking assistant like a person would, e.g. 'I'm at Khan Shatyr, 1 hour, quiet "
                          "coffee with a socket'. Returns 1–3 picks with why, how long, what to do, and sources.")
 def ask_astana(request: str, lat: float | None = None, lon: float | None = None, at: str | None = None) -> dict:
     with store.connect() as conn:
-        ans = Assistant(DbData(conn)).ask(request, lat=lat, lon=lon, at=_at(at))
+        ans = Assistant(DbData(conn)).ask(request[:1000], lat=lat, lon=lon, at=_at(at), **_demo_kw())
     items = [{"title": i.title, "status": i.status, "walk_min": i.walk_min, "distance_m": i.distance_m,
               "visit_min": list(i.visit_min), "why": i.why, "what_to_do": i.what_to_do,
               "what_to_do_source": "listing" if i.what_to_do_source == "data" else "assistant idea",
@@ -64,7 +83,7 @@ def ask_astana(request: str, lat: float | None = None, lon: float | None = None,
                          "Each has a state (now/soon/later_today) and a human badge like 'Идёт сейчас · до 22:00'.")
 def whats_on(lat: float, lon: float, radius_m: float = 1500, at: str | None = None, horizon_min: int = 180) -> list[dict]:
     with store.connect() as conn:
-        rows = store.whats_on(conn, lat, lon, radius_m, _at(at), horizon_min)
+        rows = store.whats_on(conn, lat, lon, _clamp(radius_m, 1, 20000), _at(at), int(_clamp(horizon_min, 0, 7 * 24 * 60)))
     return _json([{"title": r["title"], "venue": r.get("venue"), "state": r["state"], "badge": describe_event(r),
                    "distance_m": r["distance_m"], "is_free": r.get("is_free"), "url": r.get("url"),
                    "confidence": r.get("confidence")} for r in rows])
@@ -75,7 +94,7 @@ def whats_on(lat: float, lon: float, radius_m: float = 1500, at: str | None = No
 def places_near(lat: float, lon: float, radius_m: float = 800, categories: list[str] | None = None,
                 at: str | None = None, limit: int = 30) -> list[dict]:
     with store.connect() as conn:
-        rows = store.places_near(conn, lat, lon, radius_m, _at(at), categories, limit)
+        rows = store.places_near(conn, lat, lon, _clamp(radius_m, 1, 5000), _at(at), categories, int(_clamp(limit, 1, 200)))
     return _json([{"place_id": r["place_id"], "name": r["name"], "category": r["category"],
                    "subcategory": r["subcategory"], "state": describe_place(r), "distance_m": r["distance_m"],
                    "opening_hours": r.get("opening_hours"), "source": r.get("source_url")} for r in rows])

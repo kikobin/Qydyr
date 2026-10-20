@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from .. import settings
+from .intent import event_kind_fits
 
 WEIGHT = {"yes": 1.0, "likely": 0.6, "unknown": 0.25, "no": 0.0}
 
@@ -89,6 +90,9 @@ PUBLIC_FREE = {"park", "garden", "viewpoint", "artwork", "memorial", "monument",
 UNUSUAL_SUBS = {"artwork", "escape_game", "planetarium", "viewpoint", "attraction", "theme_park", "arts_centre"}
 PHOTO_SUBS = {"viewpoint", "attraction", "artwork", "memorial", "monument", "fountain"}
 ROMANTIC_SUBS = {"viewpoint", "restaurant", "theatre", "garden", "park"}
+# places where an event kind usually is, for "хочу на выставку" when no listing says so
+KIND_SUBS = {"exhibition": {"museum", "gallery", "exhibition_centre"},
+             "concert": {"concert_hall", "events_venue"}, "performance": {"theatre"}, "film": {"cinema"}}
 
 
 @dataclass
@@ -111,6 +115,22 @@ class Cand:
     event: dict | None = None       # whats_on() row for events
     attached: list[dict] = field(default_factory=list)  # events happening inside this place
     confidence: float = 0.8
+    inside: dict | None = None      # the closed mall this place (hours unknown) is in
+
+
+def indoor_attraction(c: Cand) -> bool:
+    """A ride or an art object with a floor number (OSM level=4) is inside a building, usually a mall:
+    not a landmark to walk to, photograph at sunset or "осмотреть снаружи"."""
+    return c.kind == "place" and c.subcategory in WALK_SUBS | PHOTO_SUBS and "level" in c.attrs
+
+
+def kind_fit(c: Cand, kinds: list[str]) -> bool:
+    """Does it offer the kind of event asked for ("концерт", "выставка")? Anything does when none was asked."""
+    if not kinds:
+        return True
+    if c.kind == "event":
+        return event_kind_fits(c.event or {}, kinds)
+    return any(event_kind_fits(e, kinds) for e in c.attached) or any(c.subcategory in KIND_SUBS.get(k, ()) for k in kinds)
 
 
 def visit_range(c: Cand) -> tuple[int, int]:
@@ -153,6 +173,8 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         return table.get(need, ("unknown", ""))
 
     # ---- places ----
+    if need in ("park", "walk", "view", "photo", "free", "culture") and indoor_attraction(c):
+        return "unknown", ""
     if need == "coffee":
         if sub == "cafe":
             return "yes", "кофейня/кафе"
@@ -256,13 +278,20 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
     return "unknown", ""
 
 
+# ticket sites glue lines together: "Сбор: 18:00Начало: 19:00Выступят: …"
+_GLUED = re.compile(r"(\d{1,2}:\d{2})(?=[A-ZА-ЯЁӘҒҚҢӨҰҮҺІ])")
+
+
 def idea(c: Cand) -> tuple[str, str]:
     """(what to do there, source): from the event description when we have it, else an assistant idea."""
     for e in ([c.event] if c.event else []) + c.attached:
         d = (e or {}).get("description")
         if d:
+            d = _GLUED.sub(r"\1 · ", d)
             first = re.split(r"(?<=[.!?])\s", d.strip())[0]
             return first[:180], "data"
     if c.kind == "event":
         return EVENT_IDEAS.get((c.event or {}).get("kind") or "", "загляните, пока идёт"), "idea"
+    if indoor_attraction(c):
+        return "это внутри здания: уточните на месте, работает ли сейчас", "idea"
     return IDEAS.get(c.subcategory, "осмотритесь и сделайте фото"), "idea"

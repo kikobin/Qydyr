@@ -9,15 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
-import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import httpx
-
 from .. import settings
-from .air import Air
+from .air import FILE_SOURCE, Air, cached_json
 from .sun import sun_times
 
 log = logging.getLogger(__name__)
@@ -232,8 +229,6 @@ _CACHE: dict[tuple, tuple[float, dict]] = {}
 
 def fetch(lat: float, lon: float, ttl_s: int = 900) -> dict:
     key = (round(lat, 2), round(lon, 2))  # ~1 km: weather doesn't need exact coordinates
-    if key in _CACHE and _time.time() - _CACHE[key][0] < ttl_s:
-        return _CACHE[key][1]
     params = {
         "latitude": key[0], "longitude": key[1], "timezone": settings.TZ_NAME, "wind_speed_unit": "ms",
         "forecast_days": 2,
@@ -241,17 +236,16 @@ def fetch(lat: float, lon: float, ttl_s: int = 900) -> dict:
         "hourly": "temperature_2m,apparent_temperature,wind_speed_10m,precipitation,snowfall,weather_code",
         "daily": "sunrise,sunset",
     }
-    r = httpx.get(OPEN_METEO, params=params, timeout=10, headers={"User-Agent": settings.USER_AGENT})
-    r.raise_for_status()
-    data = r.json()
-    _CACHE[key] = (_time.time(), data)
-    return data
+    return cached_json(_CACHE, key, OPEN_METEO, params, ttl_s)
 
 
 def get(lat: float, lon: float, at: datetime, from_file: Path | None = None) -> Weather | None:
     try:
         data = json.loads(from_file.read_text(encoding="utf-8")) if from_file else fetch(lat, lon)
-        return parse(data, at)
+        w = parse(data, at)
+        if from_file:
+            w.source = FILE_SOURCE  # "Что я учёл: погода: из файла (демо)", not a fake "Open-Meteo"
+        return w
     except Exception as e:
         log.warning("weather unavailable: %s", e)
         return None

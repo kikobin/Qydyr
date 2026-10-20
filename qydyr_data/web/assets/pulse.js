@@ -57,7 +57,9 @@ async function start() {
     tick();
   });
   setInterval(tick, 4000);
-  setInterval(() => { $("#clock").textContent = `в эфире · ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Almaty" })}`; }, 1000);
+  // the server's clock: in demo mode it is the frozen "now" the data is answered for
+  const skew = cfg.now ? new Date(cfg.now).getTime() - Date.now() : 0;
+  setInterval(() => { $("#clock").textContent = `в эфире · ${new Date(Date.now() + skew).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Almaty" })}`; }, 1000);
 }
 
 async function tick() {
@@ -75,8 +77,9 @@ async function tick() {
     if (!seen.has(key)) {
       seen.add(key);
       if (!first && c.last_s < 8) {
+        // the marker element is positioned with a transform: the flash animates a child, not the marker itself
         const el = document.createElement("div");
-        el.className = "bubble-cell";
+        el.innerHTML = '<div class="bubble-cell"></div>';
         const mk = new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map);
         setTimeout(() => mk.remove(), 2500);
       }

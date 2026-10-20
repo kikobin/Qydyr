@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from rapidfuzz import fuzz, process
 
-from ..textnorm import basic, name_keys, phonetic, translit
+from ..textnorm import basic, name_keys, phonetic, strip_generic, translit
 
 STREET_WORDS = {
     "пр", "просп", "проспект", "ул", "улица", "бульвар", "б р", "шоссе", "пер", "переулок", "наб",
@@ -69,6 +69,12 @@ def address_key(addr: str | None) -> str:
     return phonetic(translit(" ".join(words)))
 
 
+def _house_differs(address: str | None, p: "PlaceLite") -> bool:
+    """Both addresses known and the house numbers differ: a similar name is then another venue."""
+    a, b = re.findall(r"\d+", address_key(address)), re.findall(r"\d+", address_key(p.address))
+    return bool(a and b) and a[0] != b[0]
+
+
 class VenueMatcher:
     def __init__(self, places: list[PlaceLite]) -> None:
         self.places = {p.id: p for p in places}
@@ -104,6 +110,18 @@ class VenueMatcher:
                 return min(real, key=lambda p: (p.address is None, p.id)).id
         return None  # ambiguous
 
+    @staticmethod
+    def _names_agree(venue: str | None, p: PlaceLite) -> bool:
+        """Same address is not enough when the names disagree: "Дворец Жастар, пр. Республики 34" is not
+        the café "Qazan Food" at "улица Республики, 34" in a suburb 19 km away, and a stand-up bar is not
+        the flower shop in the same building. A venue that names nothing ("Кафе") leaves it to the address."""
+        v = basic(venue)
+        if not v or set(v.split()) <= CATEGORY_WORDS | STREET_WORDS:
+            return True
+        vk = phonetic(translit(strip_generic(v)))
+        return any(fuzz.token_set_ratio(vk, phonetic(translit(strip_generic(basic(n))))) >= 60
+                   for n in (p.name, p.name_ru, p.name_kk, p.name_en, *p.aliases) if n)
+
     def match(self, venue: str | None, address: str | None = None, kind: str | None = None) -> Match | None:
         keys = name_keys(venue)
         # 1. exact name / alias
@@ -116,13 +134,15 @@ class VenueMatcher:
         # 2. exact address (from the address field or from the venue string itself)
         for a in (address, venue):
             ak = address_key(a)
-            if ak and (ids := self.addr_to_ids.get(ak)) and (pid := self._prefer(ids, kind)):
+            if ak and (ids := self.addr_to_ids.get(ak)) and (pid := self._prefer(ids, kind)) \
+                    and (a is venue or self._names_agree(venue, self.places[pid])):
                 return Match(self.places[pid], 95.0, "address")
 
         # 3. fuzzy name — only for a venue string that actually names something
         if not venue or set(basic(venue).split()) <= CATEGORY_WORDS:
             return None
         best: dict[str, float] = {}
+        typed = bool(set(basic(venue).split()) & CATEGORY_WORDS)  # "Дворец …", "Театр …", "… зал"
         for q in keys:
             if len(q) < 5 or (" " not in q and len(q) < 7):
                 continue
@@ -131,6 +151,8 @@ class VenueMatcher:
                 # token_set_ratio loves subsets ("музей" ⊂ any museum); temper it with plain ratio
                 adj = 0.6 * score + 0.4 * fuzz.ratio(q, choice)
                 for pid in self.key_to_ids[choice]:
+                    if (typed and self.places[pid].category == "anchor") or _house_differs(address, self.places[pid]):
+                        continue  # "Дворец Жастар" is not the hotel "Жастар"; Бараева 2/2 is not Есенберлина 10
                     best[pid] = max(best.get(pid, 0.0), adj)
         if not best:
             return None
