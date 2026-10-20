@@ -5,6 +5,7 @@
   events [--source ID] [--no-llm] [--no-geocode] [--prune]
                               afishas / venue pages / Telegram -> events + sessions
   dgis [--mode] [--limit N]   2ГИС: hours, ratings, Wi-Fi, step-free entrances, places OSM lacks
+  dgis-probe                  one request to each 2ГИС API, raw answers to data/dgis_probe.zip
   audit [--scenario ID]       the city page: where typical requests find nothing nearby
   run-all                     places (if older than a day) + events — what the cron job runs
   whats-on --lat --lon        what is on nearby now (or --at "2026-10-23 19:10")
@@ -350,6 +351,8 @@ def main(argv: list[str] | None = None) -> None:
     sd.add_argument("--mode", choices=["enrich", "discover", "both"], default="both")
     sd.add_argument("--limit", type=int, default=500, help="network requests this run (the key has a quota)")
     sd.set_defaults(fn=cmd_dgis)
+    sub.add_parser("dgis-probe", help="one request to each 2ГИС API, raw answers to data/dgis_probe.zip").set_defaults(
+        fn=lambda a: print(__import__("qydyr_data.places.dgis_probe", fromlist=["run"]).run()))
     sc = sub.add_parser("audit", help="city audit: where typical requests find nothing nearby (for /app/city.html)")
     sc.add_argument("--scenario", action="append", help="kids_evening, work_quiet, step_free, night, frost, events")
     sc.set_defaults(fn=cmd_audit)
