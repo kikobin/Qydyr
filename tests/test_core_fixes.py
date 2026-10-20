@@ -348,3 +348,12 @@ def test_hours_and_minutes_together():
     assert parse_budget("у меня 1 час 30 минут") == (90, 90)
     assert parse_budget("2ч 15м") == (135, 135) and parse_budget("час и 20 минут") == (80, 80)
     assert parse_budget("1 hour 30 min") == (90, 90) and parse_budget("1 час") == (60, 60)
+
+
+def test_mega_in_any_case_is_mega_silk_way():
+    """"кофе у меги" found nothing (the stem "мег" is too short) and "у Mega" found a bar named Mega."""
+    from qydyr_data.assistant.locate import colloquial
+    for t in ("кофе у меги", "в меге", "у мегу", "у Mega"):
+        assert "Mega Silk Way" in colloquial(t), t
+    for t in ("Mega Garden", "Mega Arena", "мегаполис", "омега", "Mega Silk Way"):
+        assert colloquial(t) == t, t

@@ -35,6 +35,20 @@ _PLAIN = {"railway_station", "bus_station", "hotel"}          # stops and hotels
 _MINOR = {"artwork", "fountain", "memorial", "playground"}
 
 
+# What people call a place for short, in any case form. "Мега" alone is Mega Silk Way, not the bar named
+# "Mega" across the river (its stem "мег" is too short to match, and an alias would grab Mega Garden and Mega Arena).
+COLLOQUIAL = [
+    (re.compile(r"\b(?:мег(?:а|и|е|у|ой|ою)|mega)\b(?!\s*(?:silk|силк|garden|гарден|arena|арен|ice|айс))", re.I),
+     "Mega Silk Way"),
+]
+
+
+def colloquial(text: str) -> str:
+    for pattern, name in COLLOQUIAL:
+        text = pattern.sub(name, text)
+    return text
+
+
 @lru_cache(maxsize=50_000)
 def key_set(name: str | None) -> frozenset[str]:
     return frozenset(name_keys(name))
@@ -197,16 +211,17 @@ class Locator:
         geocode: an address ("я на Кенесары 40") -> {"lat", "lon", "label"} (places/dgis.Geocoder). It goes
         after a whole place name ("у Экспо 2017") and before a guess from one word of it (the Кенесары monument)."""
         gps = intent.lat is not None and intent.lon is not None
-        cands = anchor_candidates(intent.text)
-        if intent.anchor_text and intent.anchor_text not in [c for c, _ in cands]:
-            cands.append((intent.anchor_text, True))   # Claude's reading of the request
+        text = colloquial(intent.text)
+        cands = anchor_candidates(text)
+        if intent.anchor_text and (said := colloquial(intent.anchor_text)) not in [c for c, _ in cands]:
+            cands.append((said, True))   # Claude's reading of the request
         phrases = [c for c, here in sorted(cands, key=lambda c: not c[1]) if here or not gps]
         if geocode is not None and not any(self._scan(c, min_words=2) for c in phrases):
             if addr := next((a for c in phrases if (a := geocode(c))), None):
                 return Anchor(lat=addr["lat"], lon=addr["lon"], label=addr["label"], source="address")
         place = self._best(phrases)
         if place is None and not gps:
-            place = self._scan(intent.text, loose=False) or self._fuzzy(intent.text)
+            place = self._scan(text, loose=False) or self._fuzzy(text)
         if place:
             return Anchor(lat=place.lat, lon=place.lon, label=place.name, source="place", place_id=place.id)
         if gps:
