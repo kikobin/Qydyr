@@ -878,6 +878,8 @@ class QydyrBot:
 async def setup_bot(bot: Bot, qb: QydyrBot) -> None:
     me = await bot.get_me()
     qb.bot_username = me.username or ""
+    if not settings.BOT_USERNAME:   # the Mini App's "with friends" and deep links read it from /config
+        settings.BOT_USERNAME = qb.bot_username
     names = ["start", "walks", "surprise"] + (["map"] if qb.webapp_url else []) + ["lang", "help"]
     for code in (None, "ru", "kk", "en"):   # None: everyone whose Telegram language is not one of ours
         lang = code or "ru"

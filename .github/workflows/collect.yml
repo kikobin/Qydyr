@@ -6,6 +6,7 @@ on:
   schedule:
     - cron: "41 1 * * *"     # 06:41 Astana — places + events
     - cron: "17 */6 * * *"   # events
+    - cron: "23 2 * * 1"     # Mondays — 2ГИС: a key has a quota (a demo key is blocked after ~1000 requests)
   workflow_dispatch:
 
 concurrency:
@@ -37,9 +38,9 @@ jobs:
       - name: Events
         run: python -m qydyr_data events
       - name: 2ГИС (hours, ratings, Wi-Fi, step-free entrances, places OSM lacks)
-        if: env.QYDYR_DGIS_KEY != '' && (github.event.schedule == '41 1 * * *' || github.event_name == 'workflow_dispatch')
+        if: env.QYDYR_DGIS_KEY != '' && (github.event.schedule == '23 2 * * 1' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
-        run: python -m qydyr_data dgis --limit 800
+        run: python -m qydyr_data dgis --limit 200
       - name: City audit (where typical requests find nothing nearby)
         run: python -m qydyr_data audit
       - name: Report

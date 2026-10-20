@@ -330,10 +330,12 @@ def test_export_and_load_elsewhere(db, sample_places, tmp_path):
     noisy["attribute_groups"][0]["rubric_ids"] = [str(i) for i in range(500)]
     dgis._save(db, noisy, None, "rubric:162:city:1")
     dgis._save(db, ITEMS["Астана Опера"][0], "osm:way/2002", "place:osm:way/2002")
+    dgis._remember(db, "rubric:162:city:1", 1)
     f = tmp_path / "dgis.jsonl.gz"
     assert dgis.export_items(db, f) == 2
-    db.execute("delete from dgis_items")
+    db.execute("delete from dgis_items; delete from dgis_lookups")
     assert dgis.import_items(db, f) == 2
+    assert dgis._asked(db, "rubric:162:city:1", 30)            # asked there: not asked again here
     row = db.execute("select data, place_id from dgis_items where id = '70000001000000201'").fetchone()
     assert "rubric_ids" not in row["data"]["attribute_groups"][0] and row["place_id"] is None
     places = store.load_places(db)

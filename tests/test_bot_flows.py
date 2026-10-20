@@ -344,8 +344,11 @@ def test_without_https_there_is_no_map_button(env):
     assert texts(e)[-1].startswith("Карта пока недоступна")
 
 
-def test_commands_are_set_in_three_languages(env):
+def test_commands_are_set_in_three_languages(env, monkeypatch):
+    from qydyr_data import settings
+    monkeypatch.setattr(settings, "BOT_USERNAME", "")
     asyncio.run(setup_bot(env.bot, env.qb))
+    assert settings.BOT_USERNAME == env.qb.bot_username        # the Mini App learns it without QYDYR_BOT_USERNAME
     sets = env.s.sent(SetMyCommands)
     assert {c.language_code for c in sets} == {None, "ru", "kk", "en"}
     kk = next(c for c in sets if c.language_code == "kk" and any(x.command == "walks" for x in c.commands))

@@ -147,7 +147,7 @@ make demo                       # пятница 19:10, погода из фай
 ```bash
 python -m qydyr_data places     # все POI Астаны из OpenStreetMap
 python -m qydyr_data dgis --limit 500   # 2ГИС (нужен QYDYR_DGIS_KEY): часы, рейтинги, чек, доступность, места, которых нет в OSM
-python -m qydyr_data dgis --from-file  # или без ключа: загрузить собранное ранее (data/dgis_items.jsonl.gz)
+python -m qydyr_data seed       # или без ключа: загрузить собранное ранее (seed/dgis_items.jsonl.gz) и всё, чего не хватает
 python -m qydyr_data events     # Sxodim, Ticketon, Topbilet, сайты площадок, Telegram-каналы (config/sources.yaml)
 python -m qydyr_data events --prune   # то же + удалить события, которые источники больше не показывают
 python -m qydyr_data serve      # API + Mini App + бот (если задан TELEGRAM_BOT_TOKEN)
@@ -170,7 +170,8 @@ python -m qydyr_data eval       # сценарии ТЗ с автопровер�
    - `/setjoingroups`: разрешить добавление в группы;
    - privacy mode оставить включённым: бот видит только `/go` и ответы себе.
 2. **HTTPS-адрес для Mini App** в `QYDYR_PUBLIC_URL`. Варианты:
-   - Render (`render.yaml`), Railway или Fly. Бесплатный план Render засыпает через 15 минут без запросов, а бот работает через polling: спящий сервис не получает сообщений. Для показа возьмите платный инстанс или пингуйте `/health` раз в 10 минут (UptimeRobot);
+   - **Railway** — пошагово в [docs/railway.md](docs/railway.md): `railway.json` уже в репозитории, адрес берётся из домена Railway сам, новая база при первом старте заполняется сама (места, 2ГИС, события, карта дефицитов);
+   - Render (`render.yaml`) или Fly. Бесплатный план Render засыпает через 15 минут без запросов, а бот работает через polling: спящий сервис не получает сообщений. Для показа возьмите платный инстанс или пингуйте `/health` раз в 10 минут (UptimeRobot);
    - на время демо `make tunnel` (Cloudflare даст `https://….trycloudflare.com`).
 3. `python -m qydyr_data serve`. Бот сам выставит команды и кнопку меню «Карта».
 
@@ -178,7 +179,7 @@ python -m qydyr_data eval       # сценарии ТЗ с автопровер�
 - включите `postgis` и `pg_trgm`;
 - возьмите строку подключения Session pooler;
 - выполните `init-db`;
-- загрузите собранное из 2ГИС: `python -m qydyr_data dgis --from-file` (ключ не нужен; файл `data/dgis_items.jsonl.gz` лежит в архиве проекта, в git его нет).
+- контейнер при старте сам загрузит собранное из 2ГИС (`seed/dgis_items.jsonl.gz`, ключ не нужен). Вручную: `python -m qydyr_data seed`.
 
 Сбор данных по расписанию: `.github/workflows/collect.yml`. Места собираются раз в сутки, события каждые 6 часов. Если в секретах репозитория есть `QYDYR_DGIS_KEY`, раз в сутки после OSM идёт сбор из 2ГИС (до 800 запросов за запуск).
 
@@ -214,7 +215,7 @@ python -m qydyr_data eval       # сценарии ТЗ с автопровер�
 - что есть в OSM, остаётся из OSM; что взято из 2ГИС, помечено источником (`…:source`) и ссылкой на карточку;
 - ответы API кэшируются на диске, заданные вопросы запоминаются: следующий запуск продолжает с того места, где кончилась квота;
 - данные 2ГИС хранятся отдельно (`dgis_items`) и подмешиваются при каждом обновлении мест, поэтому пересбор OSM их не стирает;
-- **перенос в прод без ключа**: `dgis --export` пишет всё собранное в `data/dgis_items.jsonl.gz` (1,5 МБ), `dgis --from-file` загружает его в другую базу и сливает с местами.
+- **перенос в прод без ключа**: `dgis --export seed/dgis_items.jsonl.gz` пишет всё собранное и заданные вопросы (1,5 МБ), `seed` или `dgis --from-file` загружает это в другую базу и сливает с местами. Репозиторий приватный: данные 2ГИС в открытый репозиторий не выкладывайте.
 
 Что ключ не открывает: маршруты, матрица расстояний, изохроны, общественный транспорт и отзывы (`routing.api.2gis.com`, `public-api.reviews.2gis.com`) отвечают 403: это отдельные продукты 2ГИС. Проверка: `python -m qydyr_data dgis-probe`. Демо-ключ заблокирован после ~1 050 запросов (`apiKeyIsBlocked`): для ежедневного обновления нужен рабочий ключ.
 

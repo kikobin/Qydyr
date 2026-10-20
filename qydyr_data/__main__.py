@@ -9,6 +9,7 @@
   dgis-probe                  one request to each 2ГИС API, raw answers to data/dgis_probe.zip
   audit [--scenario ID]       the city page: where typical requests find nothing nearby
   run-all                     places (if older than a day) + events — what the cron job runs
+  seed                        a new database on its first start: only what is missing (the container runs it)
   whats-on --lat --lon        what is on nearby now (or --at "2026-10-23 19:10")
   near --lat --lon            places nearby with open/closed state
   ask "текст" [--lat --lon]   the assistant: 1–3 picks with reasons, mini-route, weather, deadline
@@ -153,6 +154,47 @@ def cmd_run_all(args) -> None:
     if args.force_places or last is None or (datetime.now(timezone.utc) - last).total_seconds() > 20 * 3600:
         cmd_places(argparse.Namespace(from_file=None))
     cmd_events(argparse.Namespace(source=None, no_llm=args.no_llm, no_geocode=False, prune=False))
+
+
+def cmd_seed(args) -> None:
+    """A new database fills itself on the first start (Railway, Render): what is missing is collected or loaded,
+    what is there is left alone. The container runs it next to the server, so the health check never waits."""
+    import hashlib
+
+    from .places import dgis
+    with store.connect() as conn:
+        n = conn.execute("""select (select count(*) from places where source_id = 'osm') osm,
+                                   (select count(*) from events) events, (select count(*) from city_audit) audit""").fetchone()
+    log.info("seed: %s", dict(n))
+    changed = False
+    if not n["osm"]:
+        try:
+            cmd_places(argparse.Namespace(from_file=None))
+            changed = True
+        except Exception as e:     # Overpass busy: the 2ГИС places and the next run still help
+            log.warning("seed: places failed: %s", e)
+    seed = Path(args.file)
+    if seed.exists():
+        key = "seed:" + hashlib.sha256(seed.read_bytes()).hexdigest()[:16]
+        with store.connect() as conn:
+            if not conn.execute("select 1 from dgis_lookups where key = %s", (key,)).fetchone():
+                k = dgis.import_items(conn, seed)
+                places = store.load_places(conn)
+                enriched, added = dgis.apply(conn, places)
+                store.upsert_places(conn, places)
+                dgis._remember(conn, key, k)
+                conn.commit()
+                log.info("seed: 2ГИС %d items, %d places enriched, %d added", k, enriched, added)
+                changed = True
+    if not n["events"]:
+        try:
+            cmd_events(argparse.Namespace(source=None, no_llm=not settings.ANTHROPIC_API_KEY, no_geocode=False,
+                                          prune=False))
+        except Exception as e:
+            log.warning("seed: events failed: %s", e)
+    if not n["audit"] or changed:   # the city page needs it, and new places change it
+        cmd_audit(argparse.Namespace(scenario=None))
+    log.info("seed: done")
 
 
 def cmd_whats_on(args) -> None:
@@ -378,6 +420,9 @@ def main(argv: list[str] | None = None) -> None:
     sd.add_argument("--from-file", nargs="?", const=str(settings.DATA_DIR / "dgis_items.jsonl.gz"),
                     help="load such a file into this database and merge it into places, no API and no key")
     sd.set_defaults(fn=cmd_dgis)
+    sx = sub.add_parser("seed", help="fill a new database: places, 2ГИС from seed/, events, city audit — only what is missing")
+    sx.add_argument("--file", default=str(settings.SEED_DIR / "dgis_items.jsonl.gz"))
+    sx.set_defaults(fn=cmd_seed)
     sub.add_parser("dgis-probe", help="one request to each 2ГИС API, raw answers to data/dgis_probe.zip").set_defaults(
         fn=lambda a: print(__import__("qydyr_data.places.dgis_probe", fromlist=["run"]).run()))
     sc = sub.add_parser("audit", help="city audit: where typical requests find nothing nearby (for /app/city.html)")

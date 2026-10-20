@@ -25,6 +25,7 @@ _load_dotenv(ROOT / ".env")
 CONFIG_DIR = ROOT / "config"
 SQL_DIR = ROOT / "sql"
 DATA_DIR = Path(os.getenv("QYDYR_DATA_DIR", ROOT / "data"))
+SEED_DIR = ROOT / "seed"          # data a new database starts from (`python -m qydyr_data seed`)
 
 TZ_NAME = os.getenv("QYDYR_TZ", "Asia/Almaty")  # Astana, UTC+5
 TZ = ZoneInfo(TZ_NAME)
@@ -49,7 +50,9 @@ CLAUDE_MODEL_NARRATE = os.getenv("QYDYR_CLAUDE_MODEL_NARRATE", CLAUDE_MODEL_SMAR
 # Telegram bot + Mini App
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BOT_USERNAME = os.getenv("QYDYR_BOT_USERNAME", "")              # without @, for deep links and QR codes
-PUBLIC_URL = os.getenv("QYDYR_PUBLIC_URL", "").rstrip("/")      # https://… where the API and the Mini App live
+# https://… where the API and the Mini App live; on Railway its generated domain when not set
+PUBLIC_URL = (os.getenv("QYDYR_PUBLIC_URL")
+              or (f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else "")).rstrip("/")
 API_URL = os.getenv("QYDYR_API_URL", "")                       # the bot talks to this API; empty = in-process
 
 # Map styles for the Mini App (MapLibre GL). Free CARTO basemaps with OSM data; replace with your own.

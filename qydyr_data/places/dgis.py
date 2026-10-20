@@ -540,14 +540,19 @@ EXPORT_FILE = settings.DATA_DIR / "dgis_items.jsonl.gz"
 
 
 def export_items(conn, path: Path | None = None) -> int:
-    """Everything asked so far, to one file: another database (production) gets it without spending the key."""
+    """Everything asked so far, to one file: another database (production) gets it without spending the key.
+    The questions go with the answers (dgis_lookups), so a run there does not ask them again."""
     path = path or EXPORT_FILE
     rows = conn.execute("select id, place_id, query, fetched_at, data from dgis_items order by id").fetchall()
+    asked = conn.execute("select key, asked_at, found from dgis_lookups order by key").fetchall()
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wt", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps({"id": r["id"], "place_id": r["place_id"], "query": r["query"],
                                 "fetched_at": r["fetched_at"].isoformat(), "data": slim(r["data"])},
+                               ensure_ascii=False) + "\n")
+        for r in asked:
+            f.write(json.dumps({"lookup": r["key"], "asked_at": r["asked_at"].isoformat(), "found": r["found"]},
                                ensure_ascii=False) + "\n")
     return len(rows)
 
@@ -557,6 +562,11 @@ def import_items(conn, path: Path | None = None) -> int:
     with gzip.open(path or EXPORT_FILE, "rt", encoding="utf-8") as f:
         for line in f:
             r = json.loads(line)
+            if "lookup" in r:
+                conn.execute("""insert into dgis_lookups (key, asked_at, found) values (%s, %s, %s)
+                                on conflict (key) do update set asked_at = greatest(excluded.asked_at, dgis_lookups.asked_at),
+                                  found = excluded.found""", (r["lookup"], r["asked_at"], r["found"]))
+                continue
             pt = r["data"]["point"]
             conn.execute(
                 """insert into dgis_items (id, place_id, name, lat, lon, data, query, fetched_at)
