@@ -29,15 +29,18 @@ from rapidfuzz import fuzz
 
 from .. import hours, settings
 from ..assistant.privacy import cell_center, geohash
-from ..textnorm import name_keys
+from ..textnorm import basic, name_keys, phonetic, translit
 from .normalize import Place
 
 log = logging.getLogger(__name__)
 
 API_URL = "https://catalog.api.2gis.com/3.0/items"
+GEOCODE_URL = "https://catalog.api.2gis.com/3.0/items/geocode"
 REGION_ID = 68                       # Астана in 2ГИС
 PAGE_SIZE, MAX_PAGES = 10, 5         # the most the key allows: 50 results per query
-AREA_RADIUS = {5: 3600, 6: 900}      # metres around a geohash cell centre that cover the cell
+# metres from a geohash cell centre to its corners in Astana (5: 3.1 x 4.9 km, 6: 770 x 610 m): the circle
+# covers the cell and little more, so neighbouring cells do not fetch the same branches again
+AREA_RADIUS = {5: 2900, 6: 500}
 FIELDS = ",".join(f"items.{f}" for f in ("point", "schedule", "reviews", "rubrics", "attribute_groups",
                                          "contact_groups", "name_ex", "address", "org", "links", "flags", "context"))
 # rubric id (Астана, from /2.0/catalog/rubric/search) -> our taxonomy; tiers: what to import first under a quota
@@ -118,6 +121,17 @@ TAG_CAPACITY = "food_service_capacity"            # "До 45 мест"
 KIDS_AREA_RE = re.compile(r"детск\w* (?:комнат|площадк|уголок|зон)|игров\w* (?:комнат|зон)", re.I)
 OUTDOOR_RE = re.compile(r"летн\w* (?:веранд|терраса|площадк)|терраса|веранда", re.I)
 PRICE_RE = re.compile(r"(\d[\d\s]*)\s*₸")
+# an address as people type it: "Кенесары 40", "улица Сыганак 10/1", "пр. Мангилик Ел 55", "Абай даңғылы 12"
+STREET_WORDS = (r"ул(?:ица|ице|ицу|\.)?|пр(?:оспект\w*|осп\.?|-т|\.)|шоссе|бульвар\w*|б-р|переул\w*|пер\.|"
+                r"мкр\.?|микрорайон\w*|жк|көшесі|даңғылы|street|st\.|avenue|ave\.?")
+_WORD = r"[^\W\d_][\w\-]*"
+ADDRESS_RE = re.compile(rf"(?:(?:{STREET_WORDS})\s*)?({_WORD}(?:\s+{_WORD}){{0,2}}),?\s+(?:дом\s+|д\.\s*)?"
+                        rf"(\d{{1,4}})(?!\d)(?:\s*[/\-]\s*\d{{1,3}}|[а-яa-z]\b)?"
+                        r"(?![\d:.,]\d|\s*(?:ч\b|час|мин|сағ|этаж|эт\.|qabat|қабат|чел|адам|раз|км|м\b|лет|год|жыл|тенге|тг|₸|"
+                        r"%|шт|дет|реб|взросл|h\b|hour|min|floor|people|kid))", re.I)
+_STREET_ONLY = re.compile(rf"^(?:{STREET_WORDS})$", re.I)
+_NOT_A_NAME = {"на", "в", "во", "до", "за", "через", "с", "со", "по", "около", "от", "к", "и", "или", "у", "возле",
+               "рядом", "минут", "часа", "часов", "в течение", "kids", "for", "at", "in", "on"}
 
 
 # ------------------------------------------------------------------ reading an item
@@ -283,6 +297,82 @@ class DgisClient:
         data = self.get(params)
         res = data.get("result") or {}
         return res.get("items") or [], int(res.get("total") or 0)
+
+
+# ------------------------------------------------------------------ addresses
+def address_part(text: str) -> str | None:
+    """The address in a phrase ("Кенесары 40 с ребёнком" -> "Кенесары 40"), or None: a name with a year
+    ("Экспо 2017") or a count ("2 часа") is not an address."""
+    for m in ADDRESS_RE.finditer(text):
+        words = m[1].split()
+        if any(w.lower() in _NOT_A_NAME for w in words):     # "кофе на 2", "через 15": a count, not a house
+            continue
+        street_said = bool(re.match(rf"(?:{STREET_WORDS})\b", m[0], re.I)) or any(_STREET_ONLY.match(w) for w in words)
+        if all(_STREET_ONLY.match(w) for w in words) or (1900 <= int(m[2]) <= 2100 and not street_said):
+            continue
+        return m[0].strip(" ,")
+    return None
+
+
+def geocode(client: "DgisClient", text: str) -> dict | None:
+    """An address in Astana -> {"lat", "lon", "label"}, through the 2ГИС geocoder. The answer must name the
+    street that was asked and the house number: the geocoder answers "Астана" to things it does not know."""
+    addr = address_part(text)
+    if not addr:
+        return None
+    m = ADDRESS_RE.search(addr)
+
+    def latin(s: str) -> str:              # "Kenesary" = "Кенесары", "Бейбітшілік" = "Бейбитшилик"
+        return phonetic(translit(basic(s)))
+    street = latin(" ".join(w for w in m[1].split() if not _STREET_ONLY.match(w)))
+    q = re.sub(r"даңғылы", "проспект", re.sub(r"көшесі", "улица", addr, flags=re.I), flags=re.I)  # it reads Russian
+    data = client.get({"q": f"Астана, {q}", "fields": "items.point,items.full_address_name", "locale": "ru_KZ"},
+                      url=GEOCODE_URL, retries=1)
+    south, west, north, east = settings.ASTANA_BBOX
+    for it in ((data.get("result") or {}).get("items") or []):
+        pt = it.get("point") or {}
+        found = it.get("address_name") or it.get("full_address_name") or ""
+        if it.get("type") != "building" or not (south <= pt.get("lat", 0) <= north and west <= pt.get("lon", 0) <= east):
+            continue
+        if not (it.get("full_address_name") or "Астана").startswith("Астана"):   # a village by the city
+            continue
+        if any(re.search(said, q, re.I) and not re.search(kind, found, re.I)       # an avenue is not a street
+               for said, kind in ((r"\bпр(?:оспект|осп|-т|\.)", "проспект"), (r"\bул(?:иц|\.)", "улица"))):
+            continue
+        # the street without its case ending ("Кенесары" ~ "Кенесары улица", "Сарайшыке" ~ "Сарайшык")
+        if fuzz.partial_ratio(street[:max(4, len(street) - 2)], latin(found)) < 80 or m[2] not in re.findall(r"\d+", found):
+            continue
+        name = (it.get("name") or "").split(",")[0].strip()
+        label = found.replace("Астана, ", "")
+        if name and name.lower() not in found.lower():           # not "проспект Республики, 18" again
+            label = f"{label} · {name}"               # "Кабанбай батыр проспект, 62 · MEGA Silk Way"
+        return {"lat": float(pt["lat"]), "lon": float(pt["lon"]), "label": label}
+    return None
+
+
+class Geocoder:
+    """Addresses people type ("я на Кенесары 40") for the assistant's start point. Only the address words go
+    to 2ГИС, not who asked; answers are cached on disk; after a failure it rests for 5 minutes, so a 2ГИС
+    outage costs one slow answer, not every answer."""
+    def __init__(self, client: "DgisClient | None" = None) -> None:
+        self._client = client
+        self._rest_until = 0.0
+
+    @classmethod
+    def default(cls) -> "Geocoder | None":
+        return cls() if settings.DGIS_API_KEY else None
+
+    def __call__(self, text: str) -> dict | None:
+        if not address_part(text) or time.time() < self._rest_until:
+            return None
+        try:
+            self._client = self._client or DgisClient(delay_s=0, client=httpx.Client(
+                timeout=4, headers={"User-Agent": settings.USER_AGENT}))
+            return geocode(self._client, text)
+        except Exception as e:
+            log.warning("2ГИС geocoder: %s", e)
+            self._rest_until = time.time() + 300
+            return None
 
 
 # ------------------------------------------------------------------ asking

@@ -153,9 +153,10 @@ def relevance(c: K.Cand, needs: list[str]) -> float:
 
 class Assistant:
     def __init__(self, data: DataSource, llm: ClaudeIntentParser | None = None,
-                 places: list[PlaceLite] | None = None, narrator=None) -> None:
+                 places: list[PlaceLite] | None = None, narrator=None, geocode=None) -> None:
         self.data = data
         self.llm = llm
+        self.geocode = geocode      # typed addresses -> a start point (places/dgis.Geocoder), None: places only
         self.narrator = narrator    # RAG generation: Claude words the picked places' facts (assistant/narrate.py)
         self.picked: list[Scored] = []  # the last answer's picks with their facts, for a narrator called later
         self.locator = Locator.of(places) if places is not None else Locator(data.places_lite())
@@ -191,7 +192,7 @@ class Assistant:
         if surprise:
             intent.needs = list(dict.fromkeys(SURPRISE_NEEDS + list(intent.needs)))  # type: ignore[arg-type]
         intent = apply_defaults(intent, explicit)
-        anchor = anchor or self.locator.resolve(intent)
+        anchor = anchor or self.locator.resolve(intent, self.geocode)
         buffer = (overrides.airport_buffer_min if overrides and overrides.airport_buffer_min else AIRPORT_BUFFER_MIN)
         ans = Answer(id=uuid.uuid4().hex[:10], intent=intent, anchor=anchor, at=at, surprise=surprise)
         ans.chips = self._chips(intent, anchor, buffer)
@@ -278,7 +279,7 @@ class Assistant:
         self.picked = picked
         if self.narrator is not None and ans.items:
             self.narrator(ans, picked)
-        if anchor.source == "gps":  # exact coordinates never leave this function
+        if anchor.source in ("gps", "address"):  # exact coordinates never leave this function
             anchor.lat, anchor.lon, _ = coarse(anchor.lat, anchor.lon)
             intent.lat, intent.lon = anchor.lat, anchor.lon
         return ans
@@ -331,7 +332,8 @@ class Assistant:
 
     def _used_data(self, ans: Answer, anchor: Anchor, weather, it: Intent) -> None:
         where = {"gps": "ваша геолокация (округлена до ~150 м, не сохраняется)",
-                 "photo": f"{anchor.label} (по фото, само фото не сохраняется)"}.get(anchor.source, anchor.label)
+                 "photo": f"{anchor.label} (по фото, само фото не сохраняется)",
+                 "address": f"{anchor.label} (адрес найден в 2ГИС, точка округлена до ~150 м)"}.get(anchor.source, anchor.label)
         wsrc = weather.source if weather else "нет данных — учитывать не могу"
         ans.used_data = [
             f"место: {where}",

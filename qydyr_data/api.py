@@ -165,6 +165,16 @@ def _llm_intent():
 
 
 _NARRATOR = None
+_GEOCODER: Any = False      # not built yet; None: no 2ГИС key
+
+
+def _geocoder():
+    """Typed addresses ("я на Кенесары 40") -> a start point, through the 2ГИС geocoder (places/dgis.py)."""
+    global _GEOCODER
+    if _GEOCODER is False:
+        from .places.dgis import Geocoder
+        _GEOCODER = Geocoder.default()
+    return _GEOCODER if settings.DGIS_API_KEY else None
 
 
 def _narrator():
@@ -251,7 +261,7 @@ def _run(body: AskIn, data: DbData, record: bool = True) -> dict:
     if body.lat is not None and body.lon is not None:  # ~100 m is enough for walking minutes; exact GPS is not kept
         body.lat, body.lon = round(body.lat, 3), round(body.lon, 3)
     text = body.text.strip() or ("удиви меня" if body.surprise else "что интересного рядом")
-    assistant = Assistant(data, llm=_llm_intent() if body.llm else None, places=_places(data))
+    assistant = Assistant(data, llm=_llm_intent() if body.llm else None, places=_places(data), geocode=_geocoder())
     ans = assistant.ask(text, at=_local(body.at), lat=body.lat, lon=body.lon, members=body.members,
                         overrides=body.overrides, weather_preset=body.weather_preset, surprise=body.surprise,
                         seed=body.seed, anchor=body.anchor.model_copy() if body.anchor else None, **_demo_kw())

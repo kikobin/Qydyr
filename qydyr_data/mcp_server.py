@@ -72,7 +72,8 @@ def ask_astana(request: str, lat: float | None = None, lon: float | None = None,
         if settings.ANTHROPIC_API_KEY:
             from .assistant.narrate import Narrator
             narrator = Narrator()
-        ans = Assistant(DbData(conn), narrator=narrator).ask(request[:1000], lat=lat, lon=lon, at=_at(at), **_demo_kw())
+        from .places.dgis import Geocoder
+        ans = Assistant(DbData(conn), narrator=narrator, geocode=Geocoder.default()).ask(request[:1000], lat=lat, lon=lon, at=_at(at), **_demo_kw())
     items = [{"title": i.title, "status": i.status, "walk_min": i.walk_min, "distance_m": i.distance_m,
               "visit_min": list(i.visit_min), "why": i.why, "why_text": i.pitch, "what_to_do": i.what_to_do,
               "what_to_do_source": "listing" if i.what_to_do_source == "data" else "assistant idea",

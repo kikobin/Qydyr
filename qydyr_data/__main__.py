@@ -181,7 +181,8 @@ def cmd_ask(args) -> None:
         from .assistant.narrate import Narrator
         llm, narrator = ClaudeIntentParser(), Narrator()
     with store.connect() as conn:
-        a = Assistant(DbData(conn), llm=llm, narrator=narrator)
+        from .places.dgis import Geocoder
+        a = Assistant(DbData(conn), llm=llm, narrator=narrator, geocode=Geocoder.default())
         ans = a.ask(args.text, at=_at(args.at), lat=args.lat, lon=args.lon,
                     weather_file=Path(args.weather_file) if args.weather_file else None,
                     air_file=Path(args.air_file) if args.air_file else None,

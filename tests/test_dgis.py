@@ -242,3 +242,78 @@ def test_needs_read_2gis_attrs():
     assert K.need_match(cafe(wifi=True, **{"wifi:source": "2gis"}), "wifi") == ("yes", "Wi‑Fi (2ГИС)")
     assert "cheap" in parse_rules("где недорого поесть у Байтерека").needs
     assert "cheap" in parse_rules("арзан кафе").needs and "cheap" not in parse_rules("кафе с видом").needs
+
+
+# ------------------------------------------------------------------ typed addresses as the start point
+def test_address_part():
+    a = dgis.address_part
+    assert a("Кенесары 40 с ребёнком") == "Кенесары 40" and a("улице Сыганак 10/1") == "улице Сыганак 10/1"
+    assert a("проспекте Мангилик Ел 55, хочу кофе") == "проспекте Мангилик Ел 55" and a("Кенесары 40к") == "Кенесары 40к"
+    assert a("Туран 37 в 18:00") == "Туран 37"
+    # a name with a year, a count, a floor, a duration: not addresses
+    for text in ("Экспо 2017", "кофе на 2 часа", "Хан Шатыр 2 этаж", "Байтерека через 15 минут", "кафе 24 часа",
+                 "Mega Silk Way", "Хан Шатыре на 2 часа с 3 детьми"):
+        assert a(text) is None, text
+
+
+class GeocodeApi:
+    """The 2ГИС geocoder as it really answers: buildings, sometimes in another town or with another number."""
+    ANSWERS = {
+        "Кенесары 40": [{"type": "building", "name": "7 Континент, бизнес-центр", "address_name": "улица Кенесары, 40",
+                         "full_address_name": "Астана, улица Кенесары, 40", "point": {"lat": 51.16561, "lon": 71.432613}}],
+        "Туран 37": [{"type": "building", "name": "Хан Шатыр, торгово-развлекательный центр",
+                      "address_name": "проспект Туран, 37", "point": {"lat": 51.1325, "lon": 71.4036}}],
+        "Республики 20": [{"type": "street", "name": "проспект Республики", "point": {"lat": 51.16, "lon": 71.43}},
+                          {"type": "building", "name": "проспект Республики, 18", "address_name": "проспект Республики, 18",
+                           "point": {"lat": 51.16, "lon": 71.43}}],
+        "Абай проспект 12": [{"type": "building", "name": "улица Абай Кунанбайулы, 12", "address_name": "улица Абай Кунанбайулы, 12",
+                              "full_address_name": "Ыбырая Алтынсарина, улица Абай Кунанбайулы, 12",
+                              "point": {"lat": 51.245, "lon": 71.265}}],
+    }
+
+    def __init__(self):
+        self.asked = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        q = request.url.params["q"].removeprefix("Астана, ")
+        self.asked.append(q)
+        items = self.ANSWERS.get(q)
+        if not items:
+            return httpx.Response(200, json={"meta": {"code": 404}})
+        return httpx.Response(200, json={"meta": {"code": 200}, "result": {"items": items, "total": len(items)}})
+
+
+def test_geocode_checks_the_answer(tmp_path):
+    api = GeocodeApi()
+    g = dgis.Geocoder(client(tmp_path, api))
+    assert g("Кенесары 40") == {"lat": 51.16561, "lon": 71.432613, "label": "улица Кенесары, 40 · 7 Континент"}
+    assert g("Туран 37")["label"] == "проспект Туран, 37 · Хан Шатыр"
+    assert g("Республики 20") is None                            # the street, or house 18: not the 20 asked for
+    assert g("Абай даңғылы 12") is None and api.asked[-1] == "Абай проспект 12"   # asked in Russian; a village street
+    assert g("Хан Шатыр") is None and g("кофе на 2 часа") is None and len(api.asked) == 4   # not addresses: not asked
+    # 2ГИС down: one failure, then it rests instead of slowing every answer
+    def down(request):
+        raise httpx.ConnectTimeout("handshake")
+    broken = dgis.Geocoder(client(tmp_path / "down", down))
+    assert broken("Кенесары 40") is None and broken._rest_until > 0
+
+
+def test_assistant_starts_from_an_address(db, sample_places):
+    load_everything(db, sample_places)
+    asked = []
+
+    def geocode(text):
+        asked.append(text)
+        return {"lat": 51.1286, "lon": 71.4307, "label": "улица Кенесары, 40"} if "Кенесары 40" in text else None
+    at = datetime(2026, 10, 23, 15, 0, tzinfo=settings.TZ)
+    a = Assistant(DbData(db), geocode=geocode)
+    ans = a.ask("я на Кенесары 40, хочу кофе", at=at, weather_file=FIX / "weather_mild.json")
+    assert ans.anchor.source == "address" and ans.anchor.label == "улица Кенесары, 40"
+    assert (ans.anchor.lat, ans.anchor.lon) != (51.1286, 71.4307)               # rounded like GPS, not kept exact
+    assert any("адрес найден в 2ГИС" in u for u in ans.used_data) and ans.items
+    # a place's whole name wins without asking 2ГИС; a destination is not where the person is
+    asked.clear()
+    ans = a.ask("я у Хан Шатыра, хочу кофе", at=at, weather_file=FIX / "weather_mild.json")
+    assert ans.anchor.source == "place" and asked == []
+    ans = a.ask("хочу на Кенесары 40", lat=51.09, lon=71.41, at=at, weather_file=FIX / "weather_mild.json")
+    assert ans.anchor.source == "gps"

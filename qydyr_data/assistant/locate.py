@@ -190,15 +190,21 @@ class Locator:
     def find_place(self, text: str | None) -> PlaceLite | None:
         return self._best([text]) if text else None
 
-    def resolve(self, intent: Intent) -> Anchor | None:
+    def resolve(self, intent: Intent, geocode=None) -> Anchor | None:
         """A place the person says they are at ("у Хан Шатыра", "кофе в Хан Шатыре", "Бәйтерек жанында")
         beats GPS: the bot sends the last shared location with every message, the words are newer.
-        A destination ("хочу в Хан Шатыр") does not."""
+        A destination ("хочу в Хан Шатыр") does not.
+        geocode: an address ("я на Кенесары 40") -> {"lat", "lon", "label"} (places/dgis.Geocoder). It goes
+        after a whole place name ("у Экспо 2017") and before a guess from one word of it (the Кенесары monument)."""
         gps = intent.lat is not None and intent.lon is not None
         cands = anchor_candidates(intent.text)
         if intent.anchor_text and intent.anchor_text not in [c for c, _ in cands]:
             cands.append((intent.anchor_text, True))   # Claude's reading of the request
-        place = self._best([c for c, here in sorted(cands, key=lambda c: not c[1]) if here or not gps])
+        phrases = [c for c, here in sorted(cands, key=lambda c: not c[1]) if here or not gps]
+        if geocode is not None and not any(self._scan(c, min_words=2) for c in phrases):
+            if addr := next((a for c in phrases if (a := geocode(c))), None):
+                return Anchor(lat=addr["lat"], lon=addr["lon"], label=addr["label"], source="address")
+        place = self._best(phrases)
         if place is None and not gps:
             place = self._scan(intent.text, loose=False) or self._fuzzy(intent.text)
         if place:

@@ -71,3 +71,10 @@ def db():
     store.init_db(conn)
     yield conn
     conn.close()
+
+
+@pytest.fixture(autouse=True)
+def _no_2gis(monkeypatch):
+    """Tests never spend the 2ГИС key, even with one in .env: they inject a fake API where they need one."""
+    from qydyr_data import settings
+    monkeypatch.setattr(settings, "DGIS_API_KEY", None)

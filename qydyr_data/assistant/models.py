@@ -70,7 +70,7 @@ class Anchor(BaseModel):
     lat: float
     lon: float
     label: str
-    source: Literal["gps", "place", "default", "photo"]
+    source: Literal["gps", "place", "default", "photo", "address"]
     place_id: Optional[str] = None
 
 
