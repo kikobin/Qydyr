@@ -1,5 +1,7 @@
 # Render Blueprint: one web service (API + Mini App + bot). Database: Supabase (PostGIS) — paste its
-# Session pooler URI into DATABASE_URL. Render gives an https URL: put it into QYDYR_PUBLIC_URL.
+# Session pooler URI into DATABASE_URL. The public URL is Render's own (RENDER_EXTERNAL_URL), nothing to set.
+# The free plan sleeps after 15 minutes without requests, and a sleeping bot gets no messages: ping /health every
+# 5 minutes (UptimeRobot, cron-job.org). 750 free hours a month cover one service running all month.
 services:
   - type: web
     name: qydyr
@@ -13,5 +15,9 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: QYDYR_PUBLIC_URL
+      - key: QYDYR_DGIS_KEY
         sync: false
+      - key: QYDYR_CLAUDE_MODEL
+        value: claude-haiku-5-5
+      - key: QYDYR_CLAUDE_MODEL_SMART
+        value: claude-sonnet-5-5

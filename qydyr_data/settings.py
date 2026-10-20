@@ -50,9 +50,10 @@ CLAUDE_MODEL_NARRATE = os.getenv("QYDYR_CLAUDE_MODEL_NARRATE", CLAUDE_MODEL_SMAR
 # Telegram bot + Mini App
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BOT_USERNAME = os.getenv("QYDYR_BOT_USERNAME", "")              # without @, for deep links and QR codes
-# https://… where the API and the Mini App live; on Railway its generated domain when not set
+# https://… where the API and the Mini App live; on Railway and Render their own address when not set
 PUBLIC_URL = (os.getenv("QYDYR_PUBLIC_URL")
-              or (f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else "")).rstrip("/")
+              or (f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else "")
+              or os.getenv("RENDER_EXTERNAL_URL", "")).rstrip("/")
 API_URL = os.getenv("QYDYR_API_URL", "")                       # the bot talks to this API; empty = in-process
 
 # Map styles for the Mini App (MapLibre GL). Free CARTO basemaps with OSM data; replace with your own.
