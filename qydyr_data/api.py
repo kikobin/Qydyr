@@ -649,6 +649,17 @@ def whats_on(lat: Lat, lon: Lon, radius: float = Query(1500, gt=0, le=20000), at
     return [{**r, "badge": describe_event(r)} for r in rows]
 
 
+@app.get("/afisha")
+def afisha_view(days: int = Query(7, ge=1, le=31), group: str | None = Query(None, pattern="^[a-z]{1,16}$"),
+                lat: Lat | None = None, lon: Lon | None = None, at: datetime | None = None,
+                data: DbData = Depends(get_data)) -> dict:
+    """What is on in the city day by day: the "Афиша" tab and /afisha in the bot."""
+    from . import afisha
+    if group and group not in afisha.GROUPS:
+        raise HTTPException(404, "no such group")
+    return afisha.afisha(data.conn, _local(at) or _now(), days, group, lat, lon)
+
+
 @app.get("/places-near")
 def places_near(lat: Lat, lon: Lon, radius: float = Query(800, gt=0, le=5000), at: datetime | None = None,
                 categories: str | None = Query(default=None, description="food,culture,park,..."),

@@ -286,6 +286,55 @@ def markup(rows: list[list[dict]]):
     return InlineKeyboardMarkup(inline_keyboard=out)
 
 
+AF_WEEKDAY = {"ru": ["пн", "вт", "ср", "чт", "пт", "сб", "вс"], "kk": ["дс", "сс", "ср", "бс", "жм", "сб", "жс"],
+              "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+AF_SHOW = 10
+
+
+def afisha_days(data: dict, which: str) -> list[dict]:
+    """today / tomorrow / weekend out of an /afisha reply."""
+    if not data.get("days"):
+        return []
+    first = datetime.fromisoformat(data["from"]).date()
+    want = {"today": lambda d: d == first, "tomorrow": lambda d: d == first + timedelta(days=1),
+            "weekend": lambda d: d.weekday() >= 5}[which]
+    return [d for d in data["days"] if want(datetime.fromisoformat(d["date"]).date())]
+
+
+def afisha_html(data: dict, which: str, lang: str = "ru") -> str:
+    days = afisha_days(data, which)
+    lines = [t(lang, f"af_head_{which}")]
+    shown = total = 0
+    for d in days:
+        total += len(d["events"])
+        for e in d["events"]:
+            if shown >= AF_SHOW:
+                break
+            shown += 1
+            day = f"{AF_WEEKDAY[lang][d['weekday']]} " if which == "weekend" else ""
+            when = t(lang, "af_now", t=e["ends_at"]) if e["now"] and e.get("ends_at") else day + ", ".join(e["times"][:3])
+            title = f'<a href="{escape(e["url"], quote=True)}">{escape(e["title"])}</a>' if e.get("url") else escape(e["title"])
+            extra = [escape(e["venue"]) if e.get("venue") else "",
+                     t(lang, "af_free") if e.get("free") else escape(e["price"]) if e.get("price") else ""]
+            if e.get("walk_min") is not None:
+                extra.append(t(lang, "by_walk", n=e["walk_min"]) if e["walk_min"] <= 30 else meters(e["distance_m"], lang))
+            lines.append(f"{'<b>' + escape(when) + '</b> · ' if when.strip() else ''}{title}"
+                         + (f"\n    <i>{' · '.join(x for x in extra if x)}</i>" if any(extra) else ""))
+    if shown == 0:
+        lines.append(t(lang, "af_empty"))
+    elif total > shown:
+        lines.append(t(lang, "af_more", n=total - shown))
+    return "\n".join(lines)
+
+
+def afisha_keyboard(which: str, lang: str = "ru", *, app_url: str | None = None, in_app: bool = True) -> list[list[dict]]:
+    days = [_cb(("· " if w == which else "") + t(lang, f"af_{w}"), f"af:{w}") for w in ("today", "tomorrow", "weekend")]
+    rows = [days]
+    if app_url:
+        rows.append([{"text": t(lang, "af_all"), "web_app": {"url": app_url}} if in_app else {"text": t(lang, "af_all"), "url": app_url}])
+    return rows
+
+
 def meters(m: int | None, lang: str = "ru") -> str:
     if m is None:
         return ""

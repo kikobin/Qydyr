@@ -18,6 +18,7 @@ async function call(method, path, body) {
 
 export const api = {
   config: () => call("GET", "/config"),
+  afisha: (q) => call("GET", `/afisha?${new URLSearchParams(q)}`),
   // a recorded request -> its words (the server runs Whisper: Telegram's webview has no speech recognition)
   voice: async (blob, lang) => {
     const fd = new FormData();

@@ -415,7 +415,14 @@ export const WALK = {
 // v5 design: the home page, the tab bar, the cards and the empty states
 export const UI = {
   ru: {
-    tabs: { home: "Главная", results: "Рядом", tours: "Прогулки", saved: "Сохранённые" },
+    tabs: { home: "Главная", results: "Рядом", afisha: "Афиша", tours: "Прогулки", saved: "Избранное" },
+    af: {
+      title: "Афиша", soon: "Скоро в городе", all_events: "Вся афиша", today: "Сегодня", tomorrow: "Завтра",
+      weekend: "Выходные", week: "Неделя", any: "Всё", empty: "В эти дни такого в афише нет. Попробуйте другой день или «Всё».",
+      now: (t) => (t ? `идёт · до ${t}` : "идёт сейчас"), free: "бесплатно", last_days: "последние дни",
+      tickets: "Билеты", route: "Как дойти", on_map: "На карте", from: "из афиш Ticketon, Sxodim и сайтов площадок",
+      groups: { concert: "Концерты", theatre: "Театр", standup: "Стендап", exhibition: "Выставки", kids: "Детям", film: "Кино", excursion: "Экскурсии", other: "Другое" },
+    },
     hello_temp: (t) => `Сәлем! Сегодня ${t}`,
     hello_plain: "Сәлем! Я Суырбек",
     fits_now: "Подходит сейчас",
@@ -463,7 +470,14 @@ export const UI = {
     loc_from_chat: "Беру геопозицию, которую вы отправили боту",
   },
   kk: {
-    tabs: { home: "Басты", results: "Жақын", tours: "Серуен", saved: "Сақталған" },
+    tabs: { home: "Басты", results: "Жақын", afisha: "Афиша", tours: "Серуен", saved: "Сақталған" },
+    af: {
+      title: "Афиша", soon: "Жақында қалада", all_events: "Бүкіл афиша", today: "Бүгін", tomorrow: "Ертең",
+      weekend: "Демалыс", week: "Апта", any: "Барлығы", empty: "Бұл күндері афишада мұндай жоқ. Басқа күнді немесе «Барлығы» таңдаңыз.",
+      now: (t) => (t ? `жүріп жатыр · ${t} дейін` : "қазір жүріп жатыр"), free: "тегін", last_days: "соңғы күндер",
+      tickets: "Билеттер", route: "Қалай жетуге", on_map: "Картада", from: "Ticketon, Sxodim афишаларынан және алаң сайттарынан",
+      groups: { concert: "Концерттер", theatre: "Театр", standup: "Стендап", exhibition: "Көрмелер", kids: "Балаларға", film: "Кино", excursion: "Экскурсиялар", other: "Басқа" },
+    },
     hello_temp: (t) => `Сәлем! Бүгін ${t}`,
     hello_plain: "Сәлем! Мен Суырбекпін",
     fits_now: "Қазір сай келеді",
@@ -511,7 +525,14 @@ export const UI = {
     loc_from_chat: "Ботқа жіберген геопозицияңызды аламын",
   },
   en: {
-    tabs: { home: "Home", results: "Nearby", tours: "Walks", saved: "Saved" },
+    tabs: { home: "Home", results: "Nearby", afisha: "Events", tours: "Walks", saved: "Saved" },
+    af: {
+      title: "What's on", soon: "Coming up in the city", all_events: "All events", today: "Today", tomorrow: "Tomorrow",
+      weekend: "Weekend", week: "Week", any: "All", empty: "Nothing like that these days. Try another day or “All”.",
+      now: (t) => (t ? `on now · until ${t}` : "on now"), free: "free", last_days: "last days",
+      tickets: "Tickets", route: "Directions", on_map: "On the map", from: "from Ticketon, Sxodim and venue sites",
+      groups: { concert: "Concerts", theatre: "Theatre", standup: "Stand-up", exhibition: "Exhibitions", kids: "For kids", film: "Cinema", excursion: "Tours", other: "Other" },
+    },
     hello_temp: (t) => `Sälem! It's ${t} today`,
     hello_plain: "Sälem! I'm Suyrbek",
     fits_now: "Good right now",

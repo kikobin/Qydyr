@@ -153,6 +153,21 @@ def test_group_location_through_the_private_chat(env):
     assert "закончился" in texts(env)[-1]
 
 
+def test_afisha_in_the_bot(env):
+    env.qb.state.session(USER.id).set_location(51.1186, 71.4701)
+    feed(env, message=msg("/afisha"))
+    call = env.s.sent(SendMessage)[-1]
+    assert call.text.startswith("<b>Афиша на сегодня</b>") and "Ночь в музее" in call.text and "Джаз-вечер" in call.text
+    assert "идёт до" in call.text
+    days = [b.callback_data for b in buttons(call)[:3]]
+    assert days == ["af:today", "af:tomorrow", "af:weekend"]
+    tap(env, "af:tomorrow", shown(env, call))
+    edited = env.s.sent(EditMessageText)[-1]
+    assert edited.text.startswith("<b>Афиша на завтра</b>") and "Свет Великой степи" in edited.text
+    feed(env, message=msg("/afisha", chat=GROUP))   # in a group too, with a link instead of a Mini App button
+    assert env.s.sent(SendMessage)[-1].text.startswith("<b>Афиша на сегодня</b>")
+
+
 def test_voice_message_is_heard_and_answered(env, monkeypatch):
     from qydyr_data import stt
     monkeypatch.setattr(settings, "STT_API_KEY", "test")

@@ -21,6 +21,7 @@ const S = {
   answer: null, sel: 0, view: "home", stack: [], place: null, walks: null, walkTitle: null,
   loading: false, favs: [], sheet: "half",
   tours: null, tour: null, walk: null, walkDone: null, saved: null, wx: null, walkTour: null,
+  afisha: null, afDay: "all", afGroup: null, afSel: null,
 };
 const W = () => WALK[S.lang];
 const DEMO_MPS = 95;      // the demo walker's speed on screen, meters per second
@@ -45,17 +46,31 @@ function setSheet(state) {
 }
 
 // how far each screen opens the sheet: the pages (home, walks, saved) cover the map, results leave it in view
-const SHEET_FOR = { home: "full", tours: "full", saved: "full", place: "full", whynot: "full", results: "half", machine: "half" };
+const SHEET_FOR = { home: "full", tours: "full", saved: "full", place: "full", whynot: "full", results: "half", machine: "half",
+  afisha: "full" };
 
 function go(view, push = true) {
   const at = S.stack.lastIndexOf(view);
   if (push && at >= 0) S.stack.length = at;          // results ⇄ machine ⇄ results is a step back, not three forward
   else if (push && S.view !== view) S.stack.push(S.view);
   if (SHEET_FOR[view] && S.view !== view) setSheet(SHEET_FOR[view]);
+  const was = S.view;
   S.view = view;
+  syncMap(was);
   T.backButton(S.stack.length > 0);
   renderSheet();
   $("#sheet .body").scrollTop = 0;
+}
+
+// the afisha draws its own pins: entering it shows the events, leaving it brings the answer back
+function syncMap(was) {
+  if (!map) return;
+  if (S.view === "afisha") { afishaMap(); return; }
+  if (was === "afisha" && !["tour", "walk", "walkdone"].includes(S.view)) {
+    map.evData = null;
+    if (S.answer) map.show(S.answer, S.sel, { labels: { you: S.t.you_here } });
+    else { map.clear(); map.mode = null; }
+  }
 }
 
 function back() {
@@ -66,7 +81,9 @@ function back() {
     if (S.answer) map.show(S.answer, S.sel, { labels: { you: S.t.you_here } });
     else { map.clear(); map.mode = null; map.tourData = null; }
   }
+  const was = S.view;
   S.view = v;
+  syncMap(was);
   T.backButton(S.stack.length > 0);
   renderSheet();
 }
@@ -122,9 +139,9 @@ const TOUR_ART = { nurzhol: "esil-evening.svg", botanical: "river-park.webp", in
 const QUICK_ICON = [I.pin, I.coffee, I.kid, I.wheel, I.moon, I.walk];
 const U = () => UI[S.lang];
 // the tab bar: four sections; the screens inside a section keep its tab lit
-const TABS = ["home", "results", "tours", "saved"];
+const TABS = ["home", "results", "afisha", "tours", "saved"];
 const SECTION = { home: "home", results: "results", whynot: "results", place: "results", machine: "results",
-  tours: "tours", tour: "tours", saved: "saved" };
+  afisha: "afisha", tours: "tours", tour: "tours", saved: "saved" };
 const catOf = (x) => (x && (x.kind === "event" ? "event" : x.category)) || "other";
 const spot = (cat, cls = "spot") => `<img class="${cls}" src="${ART}${SPOT[cat] || "river-park"}.webp" alt="" loading="lazy" decoding="async">`;
 const catIcon = (cat) => `<img class="cat" src="${ART}cat-${CAT_ICON[cat] || "landmark"}.svg" alt="" aria-hidden="true">`;
@@ -136,11 +153,12 @@ function renderTabs() {
   nav.hidden = !on;
   $("#app").classList.toggle("tabs", on);
   if (!on) return;
-  const ic = { home: I.home, results: I.map, tours: I.walk, saved: I.bookmark };
+  const ic = { home: I.home, results: I.map, afisha: I.event, tours: I.walk, saved: I.bookmark };
   const badge = {   // what is waiting there: the picks, a walk to go on with, the saved places
     results: S.answer && S.answer.items.length && sec !== "results" ? S.answer.items.length : 0,
     tours: S.saved && S.saved.visited && S.saved.visited.length ? "dot" : 0,
     saved: S.favs.length,
+    afisha: afishaNow().length && sec !== "afisha" ? "dot" : 0,   // something is on right now
   };
   nav.innerHTML = TABS.map((k) => `<button class="tab ${k === sec ? "on" : ""}" data-act="tab" data-tab="${k}"${k === sec ? ' aria-current="page"' : ""}>${ic[k]()}<span>${esc(U().tabs[k])}</span>${badge[k] === "dot" ? '<i class="n dot"></i>' : badge[k] ? `<i class="n">${badge[k]}</i>` : ""}</button>`).join("");
 }
@@ -155,6 +173,7 @@ function renderSheet() {
   else if (v === "place") html = viewPlace();
   else if (v === "machine") html = viewMachine();
   else if (v === "saved") html = viewSaved();
+  else if (v === "afisha") html = viewAfisha();
   else if (v === "tours") html = viewTours();
   else if (v === "tour") html = viewTour();
   else if (v === "walk") html = viewWalk();
@@ -255,6 +274,7 @@ function viewHome() {
     ${walks}
     <div class="tiles"><button class="tile gold" data-act="surprise">${I.star()}<strong>${esc(t.surprise)}</strong><span>${esc(u.surprise_sub)}</span></button>
       <button class="tile" data-act="machine">${I.clock()}<strong>${esc(t.machine)}</strong><span>${esc(u.machine_sub)}</span></button></div>
+    ${afishaSection()}
     ${tours}
     ${invite}
     <button class="row-card" data-act="city"><span class="icon-tile">${I.map()}</span><span class="grow"><strong>${esc(t.city)}</strong><span class="small muted">${esc(t.city_sub)}</span></span>${I.chev("i-s")}</button>
@@ -303,6 +323,123 @@ function itemCard(it, i) {
         ${it.place_id ? `<button class="btn secondary" data-act="place" data-i="${i}">${esc(u.more)}</button>` : ""}
         <button class="icon-btn" data-act="share" data-i="${i}" aria-label="${esc(t.share)}">${I.share()}</button></div>
     </div></article>`;
+}
+
+// ---------------------------------------------------------------- the afisha
+// the chips people filter by; the server groups the same way (afisha.py GROUPS)
+const AF_GROUPS = { concert: ["concert", "festival", "party"], theatre: ["performance"], standup: ["standup"],
+  exhibition: ["exhibition", "fair"], kids: ["kids"], film: ["film"], excursion: ["excursion", "workshop", "lecture"] };
+const AF_LOCALE = { ru: "ru-RU", kk: "kk-KZ", en: "en-GB" };
+const afGroupOf = (kind) => Object.keys(AF_GROUPS).find((g) => AF_GROUPS[g].includes(kind)) || "other";
+
+function afDays() {
+  if (!S.afisha) return [];
+  const first = S.afisha.from;
+  const tomorrow = new Date(Date.parse(`${first}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  return S.afisha.days
+    .filter((d) => S.afDay === "all" || (S.afDay === "today" && d.date === first) || (S.afDay === "tomorrow" && d.date === tomorrow)
+      || (S.afDay === "weekend" && d.weekday >= 5))
+    .map((d) => ({ ...d, events: d.events.filter((e) => !S.afGroup || afGroupOf(e.kind) === S.afGroup) }))
+    .filter((d) => d.events.length);
+}
+
+function afishaNow() {   // what is on right now or later today, else tomorrow: the home carousel
+  if (!S.afisha || !S.afisha.days.length) return [];
+  const [d0] = S.afisha.days;
+  return d0.date === S.afisha.from ? d0.events : [];
+}
+
+function dayLabel(date) {
+  const a = U().af, first = S.afisha.from;
+  const tomorrow = new Date(Date.parse(`${first}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  let full = date;
+  try { full = new Intl.DateTimeFormat(AF_LOCALE[S.lang], { weekday: "short", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`)); } catch (_) { /* old webview */ }
+  return date === first ? `${a.today} · ${full}` : date === tomorrow ? `${a.tomorrow} · ${full}` : cap(full);
+}
+
+function evWhen(e) {
+  const a = U().af;
+  if (e.now) return `<span class="status on"><span class="dot live"></span>${esc(a.now(e.ends_at))}</span>`;
+  return e.times.length ? `<span class="ev-time">${esc(e.times.slice(0, 4).join(" · "))}${e.times.length > 4 ? " …" : ""}</span>` : "";
+}
+
+function evDist(e) {
+  if (e.walk_min == null) return "";
+  return e.walk_min <= 30 ? ` · ${S.t.walk_min(e.walk_min)}` : ` · ${(e.distance_m / 1000).toFixed(1).replace(".", ",")} км`;
+}
+
+function evImg(e, cls) {
+  return e.image ? `<img class="${cls}" src="${esc(e.image)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'${cls} ph'}))">`
+    : `<span class="${cls} ph">${catIcon("event")}</span>`;
+}
+
+function evCard(e, i) {
+  const a = U().af, open = S.afSel === e.key;
+  const tags = [e.free ? `<span class="tag free">${esc(a.free)}</span>` : e.price ? `<span class="tag">${esc(e.price)}</span>` : "",
+    e.last_days ? `<span class="tag warn">${esc(a.last_days)}</span>` : "", e.age ? `<span class="tag">${esc(e.age)}</span>` : ""].join("");
+  return `<article class="ev${open ? " open" : ""}" data-act="ev" data-id="${esc(e.key)}" id="ev-${esc(e.key)}">
+    <div class="ev-row">${evImg(e, "ev-img")}
+      <div class="grow">${evWhen(e)}<strong>${esc(e.title)}</strong>
+        <span class="small muted">${esc(e.venue || "")}${esc(evDist(e))}</span>${tags ? `<span class="tags">${tags}</span>` : ""}</div>
+      ${e.lat != null ? `<span class="numb sm">${i + 1}</span>` : ""}</div>
+    ${open ? `${e.description ? `<p class="small ev-desc">${esc(e.description)}</p>` : ""}
+      <div class="actions">${e.url ? `<button class="btn primary" data-act="link" data-url="${esc(e.url)}">${esc(a.tickets)}</button>` : ""}
+        ${e.lat != null ? `<button class="btn secondary" data-act="ev-route" data-id="${esc(e.key)}">${I.route("i-s")}${esc(a.route)}</button>
+        <button class="icon-btn" data-act="ev-map" data-id="${esc(e.key)}" aria-label="${esc(a.on_map)}">${I.map("i-s")}</button>` : ""}</div>` : ""}
+  </article>`;
+}
+
+function viewAfisha() {
+  const a = U().af;
+  if (!S.afisha) return `${head(a.title)}<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>`;
+  const chip = (act, val, on, label) => `<button class="chip${on ? " on" : ""}" data-act="${act}" data-v="${val}">${esc(label)}</button>`;
+  const dayChips = [["all", a.week], ["today", a.today], ["tomorrow", a.tomorrow], ["weekend", a.weekend]]
+    .map(([v, l]) => chip("af-day", v, S.afDay === v, l)).join("");
+  const groups = [chip("af-group", "", !S.afGroup, a.any), ...S.afisha.groups.map((g) => chip("af-group", g.id, S.afGroup === g.id, `${a.groups[g.id] || g.id} · ${g.n}`))].join("");
+  const days = afDays();
+  const list = days.length ? days.map((d) => `<h2 class="ev-day">${esc(dayLabel(d.date))}</h2><div class="list">${d.events.map(evCard).join("")}</div>`).join("")
+    : `<div class="empty">${mascot("shrug", { size: 110 })}<p class="muted">${esc(a.empty)}</p></div>`;
+  return `${head(a.title)}
+    <div class="chip-row scroll">${dayChips}</div>
+    <div class="chip-row scroll">${groups}</div>
+    ${list}
+    <p class="fine" style="text-align:center">${esc(a.from)}</p>`;
+}
+
+function afishaSection() {
+  const list = afishaNow().slice(0, 8);
+  if (!list.length) return "";
+  const a = U().af;
+  return `<section><div class="section-head"><h2>${esc(a.soon)}</h2><button class="link" data-act="tab" data-tab="afisha">${esc(u_all())}</button></div>
+    <div class="carousel">${list.map((e) => `<button class="ev-card" data-act="ev-open" data-id="${esc(e.key)}">${evImg(e, "ev-cover")}
+      <span class="ev-info">${evWhen(e)}<strong>${esc(e.title)}</strong><span class="s">${esc(e.venue || "")}${esc(evDist(e))}</span></span></button>`).join("")}</div></section>`;
+}
+const u_all = () => U().all;
+
+function afishaMap(fit = true) {   // the pins of the first day on the list
+  if (!map) return;
+  const first = afDays()[0];
+  const events = first ? first.events : [];
+  map.showEvents(events, { sel: S.afSel, me: S.loc, fit, onPick: (id) => { S.afSel = id; renderSheet(); afishaMap(false); scrollToEv(id); } });
+}
+
+function scrollToEv(id) {
+  requestAnimationFrame(() => { const el = document.getElementById(`ev-${id}`); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); });
+}
+
+function findEv(id) {
+  for (const d of (S.afisha ? S.afisha.days : [])) { const e = d.events.find((x) => x.key === id); if (e) return e; }
+  return null;
+}
+
+async function loadAfisha() {
+  try {
+    S.afisha = await api.afisha({ days: 7, ...(S.loc ? { lat: S.loc.lat, lon: S.loc.lon } : {}), ...(S.at ? { at: S.at } : {}) });
+    S.afisha.days.forEach((d) => d.events.forEach((e) => { e.key = `${e.id}@${d.date}`; }));   // one show, several days
+  } catch (_) { S.afisha = S.afisha || { from: "", days: [], groups: [] }; }
+  if (S.view === "home" || S.view === "afisha") renderSheet();
+  if (S.view === "afisha") afishaMap();
+  renderTabs();
 }
 
 function viewResults() {
@@ -1016,6 +1153,7 @@ async function locate(explicit = false) {
     S.loc = { lat: T.roundCoord(p.lat), lon: T.roundCoord(p.lon) };
     if (map && !["tour", "walk", "walkdone"].includes(S.view)) map.center(S.loc.lon, S.loc.lat, 14.5);   // a tour keeps its own frame
     loadWalks();
+    loadAfisha();   // the distances to the events
     loadWx(S.loc.lat, S.loc.lon);
     if (explicit) ask();
   } else {
@@ -1182,6 +1320,21 @@ function bind() {
       case "walk-again": S.walkDone = null; S.stack = []; map.clear(); map.mode = null; map.tourData = null; go("home", false); T.backButton(false); break;
       case "resume": if (S.saved) { const sv = S.saved; if (S.tour && S.tour.id === sv.tourId) startWalk({ resume: sv }); else openTour(sv.tourId).then(() => S.tour && startWalk({ resume: sv })); } break;
       case "link": T.openLink(b.dataset.url); break;
+      case "ev": {   // a tap on an event opens it in place; a tap on its buttons does what they say
+        const id = b.dataset.id;
+        S.afSel = S.afSel === id ? null : id;
+        T.haptic.tap();
+        renderSheet();
+        const e = findEv(id);
+        afishaMap(false);
+        if (S.afSel && e && e.lat != null) map.focus(e.lon, e.lat);
+        break;
+      }
+      case "ev-open": S.afSel = b.dataset.id; S.afDay = "all"; S.afGroup = null; S.stack = []; go("afisha", false); scrollToEv(b.dataset.id); break;
+      case "ev-route": { const e = findEv(b.dataset.id); if (e) openRoute(e.lat, e.lon, b); break; }
+      case "ev-map": { const e = findEv(b.dataset.id); if (e) { setSheet("low"); map.focus(e.lon, e.lat); } break; }
+      case "af-day": S.afDay = b.dataset.v; S.afSel = null; T.haptic.tap(); renderSheet(); afishaMap(); break;
+      case "af-group": S.afGroup = b.dataset.v || null; S.afSel = null; T.haptic.tap(); renderSheet(); afishaMap(); break;
       case "friends": T.openLink(`https://t.me/${S.config.bot_username}?startgroup=go`); break;
       case "city": T.openLink(new URL("city.html", location.href).href); break;
       case "vote": {   // "Да, сохранить" also keeps the picked place
@@ -1264,10 +1417,13 @@ async function start() {
   T.onShake(() => { if (!S.walk) surprise(); });
   try { const sv = JSON.parse((await T.store.get("walk")) || "null"); if (sv && sv.tourId) S.saved = sv; } catch (_) { S.saved = null; }
   loadTours();
+  loadAfisha();
   const sp = T.startParam();
   const tourId = sp.startsWith("t_") ? sp.slice(2) : new URLSearchParams(location.search).get("tour");
   const id = sp.startsWith("a_") ? sp.slice(2) : sp.startsWith("t_") ? "" : sp;
-  if (tourId) openTour(tourId);
+  const view = sp === "afisha" ? "afisha" : new URLSearchParams(location.search).get("view");
+  if (view === "afisha") go("afisha", false);   // "Вся афиша" from the bot
+  else if (tourId) openTour(tourId);
   else if (id) {
     try { show(await api.answer(id)); } catch (_) { /* expired: start fresh */ }
   }

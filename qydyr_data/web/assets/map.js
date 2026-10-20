@@ -81,6 +81,7 @@ export class CityMap {
       clearTimeout(timer);
       this._layers();
       if (this.mode === "tour" && this.tourData) this.showTour(this.tourData.tour, { ...this.tourData, fit: !!this._fitPending });
+      else if (this.mode === "events" && this.evData) this.showEvents(...this.evData);
       else if (this.data) this.show(this.data, this.sel);
       this._ready();
     });
@@ -272,6 +273,33 @@ export class CityMap {
     const b = new maplibregl.LngLatBounds(pts[0], pts[0]);
     pts.forEach((p) => b.extend(p));
     this.map.fitBounds(b, { padding: this.padding(), maxZoom: 16.2, duration: 800 });
+  }
+
+  // ---- the afisha: one pin per event of the day on screen, the person's point if known
+  showEvents(events, { sel = null, me = null, onPick = null, fit = true } = {}) {
+    this.mode = "events";
+    this.evData = [events, { sel, me, onPick, fit: false }];
+    if (!this._styled) return;
+    this.clear();
+    if (me) this._add(el("div", "me"), me.lon, me.lat);
+    const on = events.filter((e) => e.lat != null);
+    const names = on.map((e) => shortLabel(e.title));
+    this._labelMax = Math.max(0, ...names.map((n) => n.length));
+    on.forEach((e, i) => {
+      const d = el("button", `pin${e.key === sel ? " sel" : ""}`);
+      d.type = "button";
+      d.setAttribute("aria-label", e.title);
+      d.append(el("span", "ring"), el("span", "core", String(events.indexOf(e) + 1)), el("span", "pin-label", names[i]));
+      d.addEventListener("click", (ev) => { ev.stopPropagation(); onPick && onPick(e.key); });
+      this._add(d, e.lon, e.lat, e.key === sel ? 3 : 2);
+    });
+    const pts = [...on.map((e) => [e.lon, e.lat]), ...(me ? [[me.lon, me.lat]] : [])];
+    if (!fit || !pts.length) { requestAnimationFrame(() => this._declutter()); return; }
+    if (pts.length === 1) { this.map.easeTo({ center: pts[0], zoom: 15, offset: this._offset(), duration: 700 }); return; }
+    const b = new maplibregl.LngLatBounds(pts[0], pts[0]);
+    pts.forEach((p) => b.extend(p));
+    this.map.fitBounds(b, { padding: this.padding(), maxZoom: 15.5, duration: 800 });
+    this.map.once("moveend", () => this._declutter());
   }
 
   focus(lon, lat) {

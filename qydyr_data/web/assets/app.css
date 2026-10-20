@@ -505,3 +505,32 @@ body.typing #app.tabs { --tabbar: 0px; }
   .chips { margin: 0; padding: 0 0 2px; }
   .wx { position: absolute; right: -16px; top: 0; transform: translateX(100%); }
 }
+
+/* ---------- the afisha: events day by day ---------- */
+.tabbar { grid-template-columns: repeat(5, 1fr); }
+.tab { font-size: 11px; }
+.chip-row + .chip-row { margin-top: 8px; }
+.ev-day { margin: 18px 0 8px; font-size: 17px; }
+.ev { border-radius: 18px; background: var(--bg); box-shadow: var(--card-shadow); padding: 10px; cursor: pointer; }
+.ev.open { box-shadow: inset 0 0 0 2px var(--ink); }
+.ev-row { display: flex; gap: 12px; align-items: flex-start; }
+.ev-row .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ev-row strong { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.ev-img { flex-shrink: 0; width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: var(--surface-2); display: grid; place-items: center; }
+.ev-img.ph img, .ev-cover.ph img { width: 30px; height: 30px; }
+.ev-time { font-size: 13px; font-weight: 600; color: var(--pin); font-variant-numeric: tabular-nums; }
+.ev .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ev .tag, .ev-card .tag { background: var(--surface-2); color: var(--muted); font-weight: 500; }
+.ev .tag.free { background: var(--live-soft); color: var(--live); }
+.ev .tag.warn { background: var(--gold-soft); color: var(--tip-ink); }
+.ev .numb.sm { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; }
+.ev.open .numb.sm { background: var(--primary); color: var(--on-primary); }
+.ev-desc { margin: 10px 2px 0; color: var(--muted); line-height: 1.45; }
+.ev .actions { display: flex; gap: 8px; margin-top: 10px; }
+.ev .actions .btn { flex: 1; }
+.ev-card { flex: 0 0 64%; scroll-snap-align: start; border: 0; padding: 0; border-radius: 20px; background: var(--bg); box-shadow: var(--card-shadow); overflow: hidden; text-align: left; display: flex; flex-direction: column; }
+.ev-cover { display: grid; place-items: center; width: 100%; height: 120px; object-fit: cover; background: var(--surface-2); }
+.ev-info { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 12px; }
+.ev-info strong { font-size: 15px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ev-info .s { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-info .status { font-size: 12px; }

@@ -16,6 +16,7 @@ class Backend(Protocol):
     def walks(self, lat: float, lon: float, lang: str = "ru") -> list[dict]: ...
     def whereami(self, image: bytes, lang: str) -> dict: ...
     def voice(self, audio: bytes, lang: str) -> str | None: ...
+    def afisha(self, **q: Any) -> dict: ...
     def tours(self, lang: str = "ru") -> list[dict]: ...
     def tour(self, tour_id: str, lang: str = "ru") -> dict | None: ...
     def tour_progress(self, tour_id: str, lat: float, lon: float, visited: list[str], accuracy: float | None = None) -> dict: ...
@@ -60,6 +61,14 @@ class LocalBackend:
         conn, data = self._data()
         try:
             return api.walks(lat, lon, None, None, lang=lang, data=data)
+        finally:
+            conn.close()
+
+    def afisha(self, **q: Any) -> dict:
+        from .. import api
+        conn, data = self._data()
+        try:
+            return api.afisha_view(data=data, **{"days": 7, "group": None, "lat": None, "lon": None, "at": None, **q})
         finally:
             conn.close()
 
@@ -133,6 +142,11 @@ class HttpBackend:
 
     def walks(self, lat: float, lon: float, lang: str = "ru") -> list[dict]:
         r = self.c.get("/walks", params={"lat": lat, "lon": lon, "lang": lang})
+        r.raise_for_status()
+        return r.json()
+
+    def afisha(self, **q: Any) -> dict:
+        r = self.c.get("/afisha", params={k: v for k, v in q.items() if v is not None})
         r.raise_for_status()
         return r.json()
 

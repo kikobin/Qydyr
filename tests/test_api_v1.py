@@ -170,3 +170,28 @@ def test_pulse_and_answer_store_units():
     st.put("b", {"x": 2})
     st.put("c", {"x": 3})
     assert st.get("a") is None and st.get("c") == {"x": 3}
+
+
+def test_afisha_day_by_day(db, sample_places, monkeypatch):
+    c = client_for(db, sample_places, monkeypatch)
+    try:
+        r = c.get("/afisha", params={"at": AT, "days": 3, "lat": 51.1186, "lon": 71.4701}).json()
+        today, tomorrow = r["days"][0], r["days"][1]
+        assert r["from"] == today["date"] == "2026-10-23" and tomorrow["date"] == "2026-10-24"
+        night = next(e for e in today["events"] if "Ночь в музее" in e["title"])
+        assert night["now"] and night["walk_min"] == 0 and night["free"]
+        assert [e["times"] for e in today["events"] if e["kind"] == "concert"] == [["20:00"]]
+        assert {g["id"]: g["n"] for g in r["groups"]} == {"concert": 1, "exhibition": 2}   # each show counted once
+        only = c.get("/afisha", params={"at": AT, "group": "concert"}).json()
+        assert {e["kind"] for d in only["days"] for e in d["events"]} == {"concert"} and len(only["groups"]) == 2
+        assert c.get("/afisha", params={"group": "nope"}).status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_afisha_description_and_price_read_well():
+    from qydyr_data.afisha import _clean, _price
+    assert _clean("Сбор: 18:00Начало: 19:00Выступят: Тимур.Обратите внимание") == \
+        "Сбор: 18:00 · Начало: 19:00 · Выступят: Тимур. Обратите внимание"
+    assert _clean("Концерт в WE Kitchen, iPhone") == "Концерт в WE Kitchen, iPhone"
+    assert _price("От 12 750 ₸ во Freedom (по промокоду WELCOME); от 15 000 ₸ на сайте") == "От 12 750 ₸"

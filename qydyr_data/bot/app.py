@@ -29,7 +29,8 @@ from aiogram.types import (BotCommand, BotCommandScopeAllGroupChats, BotCommandS
 from .. import handoff, settings
 from ..assistant import travel
 from .backend import Backend, make_backend
-from .fmt import (answer_html, answer_keyboard, chip_keyboard, hm, in_astana, item_html, markup, meters, poll_options,
+from .fmt import (afisha_days, afisha_html, afisha_keyboard, answer_html, answer_keyboard, chip_keyboard, hm, in_astana,
+                  item_html, markup, meters, poll_options,
                   route_keyboard, stop_html, tour_html, walk_route_url, walk_text, why_not_html)
 from .state import Member, State, Walk
 from .texts import T, t, user_lang
@@ -199,6 +200,23 @@ class QydyrBot:
         @r.message(Command("surprise"), private)
         async def surprise_cmd(m: Message) -> None:
             await self.surprise(m)
+
+        @r.message(Command("afisha"))
+        async def afisha_cmd(m: Message) -> None:
+            await self.send_afisha(m)
+
+        @r.callback_query(F.data.startswith("af:"))
+        async def afisha_day(c: CallbackQuery) -> None:
+            which = c.data[3:]
+            if which not in ("today", "tomorrow", "weekend"):
+                await c.answer()
+                return
+            await c.answer()
+            private_chat = c.message.chat.type == ChatType.PRIVATE
+            lang = self.lang_for(c.from_user, c.message.chat)
+            data = await self.afisha_data(c.from_user.id if private_chat else None)
+            await self.edit(c.message.edit_text(afisha_html(data, which, lang), link_preview_options=NO_PREVIEW,
+                                                reply_markup=markup(self.afisha_kb(which, lang, private_chat))))
 
         @r.message(Command("walks"), private)
         async def walks(m: Message) -> None:
@@ -840,6 +858,30 @@ class QydyrBot:
         msg = await m.answer(t(lang, "group_start", where=where), reply_markup=self.group_kb(g.gid, len(g.members), lang))
         self.state.bind_message(g, msg.message_id)
 
+    async def afisha_data(self, user_id: int | None) -> dict:
+        s = self.state.sessions.get(user_id) if user_id else None
+        loc = s.location() if s else None
+        try:
+            return await self.call(self.backend.afisha, days=7, **({"lat": loc[0], "lon": loc[1]} if loc else {}))
+        except Exception as e:
+            log.warning("afisha: %s", e)
+            return {"days": []}
+
+    def afisha_kb(self, which: str, lang: str, private: bool) -> list[list[dict]]:
+        # a Mini App button opens only in a private chat; a group gets the t.me link to the same screen
+        if private and self.webapp_url:
+            return afisha_keyboard(which, lang, app_url=f"{self.webapp_url}?view=afisha")
+        url = f"https://t.me/{self.bot_username}?startapp=afisha" if self.bot_username and self.webapp_url else None
+        return afisha_keyboard(which, lang, app_url=url, in_app=False)
+
+    async def send_afisha(self, m: Message) -> None:
+        private_chat = m.chat.type == ChatType.PRIVATE
+        lang = self.lang_for(m.from_user, m.chat)
+        data = await self.afisha_data(m.from_user.id if private_chat else None)
+        which = "today" if any(d["events"] for d in afisha_days(data, "today")) else "tomorrow"   # late at night: tomorrow
+        await m.answer(afisha_html(data, which, lang), link_preview_options=NO_PREVIEW,
+                       reply_markup=markup(self.afisha_kb(which, lang, private_chat)))
+
     async def group_location(self, m: Message, g, lat: float, lon: float, lang: str) -> None:
         mem = g.members.setdefault(m.from_user.id, Member(name=m.from_user.first_name or t(g.lang, "member")))
         mem.lat, mem.lon = round(lat, 3), round(lon, 3)
@@ -955,12 +997,13 @@ async def setup_bot(bot: Bot, qb: QydyrBot) -> None:
     qb.bot_username = me.username or ""
     if not settings.BOT_USERNAME:   # the Mini App's "with friends" and deep links read it from /config
         settings.BOT_USERNAME = qb.bot_username
-    names = ["start", "walks", "surprise"] + (["map"] if qb.webapp_url else []) + ["lang", "help"]
+    names = ["start", "afisha", "walks", "surprise"] + (["map"] if qb.webapp_url else []) + ["lang", "help"]
     for code in (None, "ru", "kk", "en"):   # None: everyone whose Telegram language is not one of ours
         lang = code or "ru"
         await bot.set_my_commands([BotCommand(command=c, description=t(lang, f"cmd_{c}")) for c in names],
                                   scope=BotCommandScopeAllPrivateChats(), language_code=code)
         await bot.set_my_commands([BotCommand(command="go", description=t(lang, "cmd_go")),
+                                   BotCommand(command="afisha", description=t(lang, "cmd_afisha")),
                                    BotCommand(command="lang", description=t(lang, "cmd_lang"))],
                                   scope=BotCommandScopeAllGroupChats(), language_code=code)
     if qb.webapp_url:
