@@ -120,7 +120,6 @@ const CAT_ICON = { culture: "museum", food: "cafe", park: "park", landmark: "lan
   kids: "kids", entertainment: "events", sport: "park", leisure: "park", shopping: "landmark", work: "cafe" };
 const TOUR_ART = { nurzhol: "esil-evening.svg", botanical: "river-park.webp", independence: "monument.webp", expo: "museum.webp" };
 const QUICK_ICON = [I.pin, I.coffee, I.kid, I.wheel, I.moon, I.walk];
-const TAB_VIEWS = ["home", "results", "tours", "saved"];
 const U = () => UI[S.lang];
 const catOf = (x) => (x && (x.kind === "event" ? "event" : x.category)) || "other";
 const spot = (cat, cls = "spot") => `<img class="${cls}" src="${ART}${SPOT[cat] || "river-park"}.webp" alt="" loading="lazy" decoding="async">`;
@@ -143,18 +142,7 @@ function renderSheet() {
   else if (v === "walkdone") html = viewWalkDone();
   document.body.dataset.view = v;
   $("#sheet .body").innerHTML = html;
-  renderTabs();
   if (v === "machine") bindMachine();
-}
-
-function renderTabs() {
-  const v = S.view, on = TAB_VIEWS.includes(v) && !S.walk;
-  const nav = $("#tabbar");
-  nav.hidden = !on;
-  $("#app").classList.toggle("tabs", on);
-  if (!on) return;
-  const ic = { home: I.home, results: I.map, tours: I.walk, saved: I.bookmark };
-  nav.innerHTML = TAB_VIEWS.map((k) => `<button class="tab ${k === v ? "on" : ""}" data-act="tab" data-tab="${k}"${k === v ? ' aria-current="page"' : ""}>${ic[k]()}<span>${esc(U().tabs[k])}</span></button>`).join("");
 }
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -249,6 +237,7 @@ function viewHome() {
       <button class="tile" data-act="machine">${I.clock()}<strong>${esc(t.machine)}</strong><span>${esc(u.machine_sub)}</span></button></div>
     ${tours}
     ${invite}
+    <button class="row-card" data-act="saved"><span class="icon-tile">${I.bookmark()}</span><span class="grow"><strong>${esc(u.tabs.saved)}</strong><span class="small muted">${esc(S.favs.length ? u.saved_count(S.favs.length) : t.saved_empty)}</span></span>${I.chev("i-s")}</button>
     <button class="row-card" data-act="city"><span class="icon-tile">${I.map()}</span><span class="grow"><strong>${esc(t.city)}</strong><span class="small muted">${esc(t.city_sub)}</span></span>${I.chev("i-s")}</button>
     <div class="foot"><button class="lang-btn" data-act="lang">${esc(u.lang_label)}: <b>${esc(u.lang_name[S.lang])}</b>${I.globe("i-xs")}</button>
       <p class="privacy">${I.lock("i-xs")}${esc(t.privacy)}</p></div>`;
@@ -408,7 +397,7 @@ function viewMachine() {
 
 function viewSaved() {
   const t = S.t, u = U();
-  return `${head(u.tabs.saved, { backBtn: S.stack.length > 0 })}
+  return `${head(u.tabs.saved, { backBtn: true })}
     ${S.favs.length ? `<p class="muted small" style="margin-top:-10px">${esc(u.saved_count(S.favs.length))}</p>
       <div class="list">${S.favs.map((f, i) => `<article class="saved-row">${spot(f.category || "other")}<button class="saved-open" data-act="fav-open" data-i="${i}"><strong>${esc(f.title)}</strong>
         <span class="status">${esc(cap(catLabel(f.category || "other")))}</span></button><button class="bookmark-btn" data-act="fav-del" data-i="${i}" aria-label="${esc(t.unsave)}">${I.bookmark()}</button></article>`).join("")}</div>`
@@ -420,7 +409,7 @@ function viewTours() {
   const w = W();
   const tours = S.tours === null ? `<div class="skeleton"></div><div class="skeleton"></div>` : (S.tours || []).map((c) => tourCard(c, true)).join("");
   const near = S.walks && S.walks.length ? `<section><div class="section-head"><h2>${esc(w.nearby_walks)}</h2></div><div class="list">${S.walks.map(walkRow).join("")}</div></section>` : "";
-  return `${head(w.tours, { backBtn: S.stack.length > 0 })}<div class="list">${tours}</div>${near}`;
+  return `${head(w.tours, { backBtn: true })}<div class="list">${tours}</div>${near}`;
 }
 
 // ---------------------------------------------------------------- guided walks
@@ -1141,13 +1130,10 @@ function bind() {
       case "fav-del": S.favs.splice(i, 1); T.store.set("favs", JSON.stringify(S.favs)); T.haptic.tap(); renderSheet(); break;
       case "search-more": S.overrides = merge(S.overrides, { budget_min: 60, budget_max: 90 }); ask(); break;
       case "focus-search": $("#q").focus(); break;
-      case "tab": {   // the tab bar: a section, not a step: no back button
+      case "tab": {   // "Все прогулки", "Найти места": a section of the app, with a way back
         const v = b.dataset.tab;
-        S.stack = [];
-        T.backButton(false);
-        if (v === "results" && !S.answer) { S.query = QUICK_QUERIES[0]; $("#q").value = S.t.quick[0]; S.overrides = {}; S.view = "home"; ask(); break; }
-        go(v, false);
-        T.backButton(false);
+        if (v === "results" && !S.answer) { S.query = QUICK_QUERIES[0]; $("#q").value = S.t.quick[0]; S.overrides = {}; ask(); break; }
+        go(v);
         break;
       }
       default: break;

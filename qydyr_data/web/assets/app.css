@@ -51,7 +51,6 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --safe-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
-  --tabbar: 0px;
   color-scheme: light;
 }
 
@@ -204,7 +203,7 @@ body[data-view="saved"] .chips, body[data-view="saved"] .wx { display: none; }
 .sheet .body {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
   /* the sheet is 88vh tall and slides down: the hidden part is padding, so the last buttons scroll into view */
-  padding: 4px 16px calc(28px + var(--safe-bottom) + var(--tabbar) + 88vh - var(--peek, 46vh));
+  padding: 4px 16px calc(28px + var(--safe-bottom) + 88vh - var(--peek, 46vh));
   display: flex; flex-direction: column; gap: 16px; touch-action: pan-y;
 }
 /* rows that scroll sideways (walk cards, chips) have min-height 0 in a flex column: never let them shrink */
@@ -337,18 +336,6 @@ button.src { border: 0; background: none; padding: 0; display: inline-flex; alig
 .lang-btn { border: 0; background: none; font-size: 13px; color: var(--muted); min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }
 .lang-btn b { color: var(--ink); font-weight: 600; }
 .privacy { display: flex; gap: 6px; justify-content: center; align-items: center; font-size: 12px; color: var(--muted); text-align: center; }
-
-/* ---------- the tab bar ---------- */
-.tabbar {
-  position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr);
-  background: color-mix(in srgb, var(--surface) 92%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
-  border-top: 1px solid var(--line); padding: 6px 6px calc(6px + var(--safe-bottom));
-}
-.tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px; border: 0; background: none; font-size: 12px; color: var(--muted); font-weight: 500; border-radius: 12px; }
-.tab svg { width: 22px; height: 22px; }
-.tab.on { color: var(--ink); }
-.tab.on svg { color: var(--primary); }
-#app.tabs { --tabbar: 66px; }
 
 /* ---------- results ---------- */
 .result { background: var(--bg); border-radius: 22px; overflow: hidden; box-shadow: var(--card-shadow); }
@@ -537,7 +524,7 @@ button.src { border: 0; background: none; padding: 0; display: inline-flex; alig
 
 /* ---------- toasts, overlays ---------- */
 .toast {
-  position: absolute; z-index: 40; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(24px + var(--safe-bottom) + var(--tabbar));
+  position: absolute; z-index: 40; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(24px + var(--safe-bottom));
   max-width: min(92vw, 420px); padding: 12px 18px; border-radius: 14px; background: var(--ink); color: var(--bg);
   box-shadow: var(--shadow); font-size: 14px; font-weight: 500; animation: rise 0.25s ease-out;
 }
@@ -575,10 +562,9 @@ button.src { border: 0; background: none; padding: 0; display: inline-flex; alig
     left: 16px; right: auto; bottom: 16px; top: calc(196px + var(--safe-top)); width: 420px; height: auto;
     border-radius: 24px; box-shadow: var(--card-shadow), var(--shadow); transform: none !important;
   }
-  .sheet .body { padding-bottom: calc(28px + var(--tabbar)); }
+  .sheet .body { padding-bottom: 28px; }
   .sheet .grab { display: none; }
   body[data-view="home"] .sheet, body[data-view="tours"] .sheet, body[data-view="saved"] .sheet { top: calc(86px + var(--safe-top)); }
   .chips { margin: 0; padding: 0 0 2px; }
   .wx { position: absolute; right: -16px; top: 0; transform: translateX(100%); }
-  .tabbar { left: 16px; right: auto; width: 420px; bottom: 16px; border-radius: 0 0 24px 24px; border: 0; }
 }
