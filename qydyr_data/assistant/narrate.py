@@ -64,9 +64,10 @@ def _facts(n: int, it, s: "Scored | None") -> dict:
     out = {
         "n": n, "name": it.title, "kind": SUB_RU.get(it.subcategory or "", it.subcategory or it.category),
         "how_far": f"{walk}, {it.distance_m} м", "status": it.status, "visit_min": list(it.visit_min),
-        "matches": it.why, "warnings": it.warnings, "indoor": it.indoor,
-        "tags": {k: attrs[k] for k in (*FACT_TAGS, "internet_access", "outdoor_seating", "socket", "2gis:rating",
-                                       "2gis:reviews", "2gis:rubrics") if attrs.get(k) not in (None, "")},
+        "matches": it.why, "warnings": it.warnings, "indoor": it.indoor, "where_inside": it.where,
+        "tags": {k: attrs[k] for k in (*FACT_TAGS, "internet_access", "outdoor_seating", "socket", "laptop", "2gis:rating",
+                                       "2gis:reviews", "2gis:rubrics", "avg_check", "kids_friendly", "english_menu",
+                                       "access:features", "nearest_station", "2gis:badges") if attrs.get(k) not in (None, "")},
     }
     if it.attached_event:
         out["event_now_or_soon"] = it.attached_event

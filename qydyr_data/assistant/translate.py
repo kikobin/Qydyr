@@ -78,6 +78,7 @@ def translate_strings(strings: list[str], lang: str, llm=None) -> list[str] | No
 
 # which fields of Answer.model_dump() are human text (titles of places are names: kept as is)
 _PATHS = [("notes", None), ("group_notes", None), ("weather", "s"), ("items", "status"), ("items", "why"), ("items", "pitch"),
+          ("items", "where"),
           ("items", "what_to_do"), ("items", "warnings"), ("items", "group_fit"), ("rejected", "reason"),
           ("chips", "label"), ("funnel", "label")]
 

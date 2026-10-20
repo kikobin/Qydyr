@@ -1,13 +1,16 @@
 """2ГИС Places API (catalog.api.2gis.com/3.0): what OpenStreetMap lacks in Astana — opening hours, rating and
 number of reviews, rubrics, Wi‑Fi, sockets, a step-free entrance, phones — and the places OSM has not mapped.
 
-    python -m qydyr_data dgis --limit 500       # ask, store in dgis_items, merge into places
+    python -m qydyr_data dgis --limit 600       # ask, store in dgis_items, merge into places
 
-Two ways of asking, both cached on disk (data/cache/dgis) and remembered in dgis_lookups, so a run continues
+Three ways of asking, all cached on disk (data/cache/dgis) and remembered in dgis_lookups, so a run continues
 where the last one stopped and the key's quota goes to new questions:
-  - enrich: each OSM place by its name around its point -> the same place in 2ГИС (name and distance agree);
-  - discover: typical rubrics ("кофейня", "детский центр", ...) around every populated ~1 km cell -> places
-    OSM does not have.
+  - rubrics (the main one): every branch of the rubrics people go out to, city-wide, page by page
+    (RUBRIC_IMPORT: kids' play centres, museums, coworkings, coffee shops, ...). An item that is an OSM place
+    (same name within 150 m) enriches it; the rest are places OSM does not have;
+  - enrich: an OSM place still without a match, by its name around its point;
+  - discover: free-text rubric queries around populated ~1 km cells (for rubrics we have no id for).
+What the real API returns (fields, attribute tags) was checked with `python -m qydyr_data dgis-probe`.
 Matches live in dgis_items and are merged into places on every `places` run: an OSM refresh never wipes them.
 OSM keeps the last word where it has a value; 2ГИС fills the gaps and says so in attrs (…:source).
 Data © 2ГИС, shown with attribution — check the API licence terms before a public launch."""
@@ -32,8 +35,44 @@ from .normalize import Place
 log = logging.getLogger(__name__)
 
 API_URL = "https://catalog.api.2gis.com/3.0/items"
+REGION_ID = 68                       # Астана in 2ГИС
+PAGE_SIZE, MAX_PAGES = 10, 5         # the most the key allows: 50 results per query
+AREA_RADIUS = {5: 3600, 6: 900}      # metres around a geohash cell centre that cover the cell
 FIELDS = ",".join(f"items.{f}" for f in ("point", "schedule", "reviews", "rubrics", "attribute_groups",
-                                         "contact_groups", "name_ex", "address", "org"))
+                                         "contact_groups", "name_ex", "address", "org", "links", "flags", "context"))
+# rubric id (Астана, from /2.0/catalog/rubric/search) -> our taxonomy; tiers: what to import first under a quota
+RUBRIC_IMPORT: list[tuple[int, str, tuple[str, str, str]]] = [
+    (1, "16743", ("kids", "kids_centre", "indoor")),         # Детские игровые залы, 73
+    (1, "193", ("culture", "museum", "indoor")),             # Музеи
+    (1, "190", ("culture", "gallery", "indoor")),            # Художественные выставки
+    (1, "199", ("culture", "theatre", "indoor")),            # Театры
+    (1, "200", ("culture", "concert_hall", "indoor")),       # Филармония
+    (1, "51001", ("culture", "concert_hall", "indoor")),     # Концертные залы
+    (1, "192", ("entertainment", "cinema", "indoor")),       # Кинотеатры
+    (1, "19499", ("shopping", "mall", "indoor")),            # Торгово-развлекательные центры
+    (1, "104110", ("work", "coworking", "indoor")),          # Коворкинг
+    (1, "72370", ("food", "anticafe", "indoor")),            # Антикафе
+    (1, "173", ("nightlife", "nightclub", "indoor")),        # Ночные клубы
+    (1, "170", ("entertainment", "bowling", "indoor")),      # Боулинг
+    (1, "110300", ("entertainment", "escape_game", "indoor")),  # Квесты
+    (1, "112442", ("entertainment", "vr", "indoor")),        # Центры виртуальной реальности
+    (1, "110427", ("kids", "trampoline_park", "indoor")),    # Батутные центры
+    (1, "11974", ("sport", "ice_rink", "indoor")),           # Каток
+    (1, "168", ("park", "park", "outdoor")),                 # Парки
+    (1, "189", ("culture", "library", "indoor")),            # Библиотеки
+    (1, "111526", ("landmark", "viewpoint", "mixed")),       # Смотровые площадки
+    (1, "167", ("entertainment", "zoo", "outdoor")),         # Зоопарк
+    (1, "15800", ("entertainment", "aquarium", "indoor")),   # Океанариум
+    (1, "112609", ("nightlife", "karaoke", "indoor")),       # Караоке-боксы
+    (1, "112658", ("food", "cafe", "indoor")),               # Кафе-кондитерские
+    (2, "162", ("food", "cafe", "indoor")),                  # Кофейни, 927
+    (2, "164", ("food", "restaurant", "indoor")),            # Рестораны, 510
+    (2, "159", ("nightlife", "bar", "indoor")),              # Бары, 658
+    (2, "21387", ("nightlife", "karaoke", "indoor")),        # Караоке-залы
+    (3, "161", ("food", "cafe", "indoor")),                  # Кафе, 1355
+    (3, "165", ("food", "fast_food", "indoor")),             # Быстрое питание, 1101
+]
+RUBRIC_TAXONOMY = {rid: cat for _, rid, cat in RUBRIC_IMPORT}
 SOURCE_ID = "2gis"
 ATTRIBUTION = "© 2ГИС"
 DAYS = [("Mon", "Mo"), ("Tue", "Tu"), ("Wed", "We"), ("Thu", "Th"), ("Fri", "Fr"), ("Sat", "Sa"), ("Sun", "Su")]
@@ -68,7 +107,17 @@ _RUBRIC_RE = [(re.compile(p, re.I), c) for p, c in RUBRICS]
 WIFI_RE = re.compile(r"wi-?fi|вай-?фай|беспроводн\w* интернет", re.I)
 SOCKET_RE = re.compile(r"розетк", re.I)
 STEP_FREE_RE = re.compile(r"пандус|без ступен|для (?:людей|посетителей) с инвалидност|маломобильн|"
-                          r"доступн\w* для (?:инвалид|колясоч)|вход для колясок|колясочник", re.I)
+                          r"доступн\w* (?:для (?:инвалид|колясоч)|вход)|вход для колясок|колясочник|широкий лифт", re.I)
+# attribute tags as 2ГИС returns them (seen in the probe): tag prefix -> what it tells us
+TAG_ACCESSIBLE = "accessible_entrance"            # "Доступная среда": пандус, широкий лифт, автоматическая дверь
+TAG_LAPTOP = "food_service_cafe_working"          # "Можно с ноутбуком"
+TAG_KIDS_MENU = "food_service_details_food_kids_menu"
+TAG_ENGLISH_MENU = "food_service_details_food_english_menu"
+TAG_AVG_PRICE = "food_service_avg_price"          # "Чек 7000 ₸"
+TAG_CAPACITY = "food_service_capacity"            # "До 45 мест"
+KIDS_AREA_RE = re.compile(r"детск\w* (?:комнат|площадк|уголок|зон)|игров\w* (?:комнат|зон)", re.I)
+OUTDOOR_RE = re.compile(r"летн\w* (?:веранд|терраса|площадк)|терраса|веранда", re.I)
+PRICE_RE = re.compile(r"(\d[\d\s]*)\s*₸")
 
 
 # ------------------------------------------------------------------ reading an item
@@ -106,6 +155,12 @@ def schedule_to_oh(schedule: dict | None) -> str | None:
         parts.append(f"{label} {spans}")
     oh = "; ".join(parts)
     return oh if hours.is_valid(oh) else None
+
+
+def attributes(item: dict) -> list[dict]:
+    """[{"group": "Доступная среда", "name": "Пандус", "tag": "accessible_entrance_..."}, ...]"""
+    return [{"group": g.get("name") or "", "name": a.get("name") or "", "tag": a.get("tag") or ""}
+            for g in item.get("attribute_groups") or [] for a in g.get("attributes") or []]
 
 
 def attribute_names(item: dict) -> list[str]:
@@ -182,27 +237,52 @@ class DgisClient:
         self.requests = 0          # real network requests in this run (the quota), cache hits not counted
         self._last = 0.0
 
-    def search(self, q: str, lon: float, lat: float, radius: int, page: int = 1, page_size: int = 10) -> list[dict]:
-        params = {"q": q, "point": f"{lon:.6f},{lat:.6f}", "radius": radius, "page": page,
-                  "page_size": page_size, "fields": FIELDS, "locale": "ru_KZ"}
-        cache = self.cache_dir / (hashlib.sha1(json.dumps(params, sort_keys=True, ensure_ascii=False).encode()).hexdigest() + ".json")
+    def get(self, params: dict, url: str = API_URL, retries: int = 4) -> dict:
+        """One API call, from the disk cache when fresh. The server drops connections when asked fast:
+        wait and retry instead of failing the whole run."""
+        cache = self.cache_dir / (hashlib.sha1(json.dumps([url, params], sort_keys=True, ensure_ascii=False).encode()).hexdigest() + ".json")
         if cache.exists() and time.time() - cache.stat().st_mtime < self.ttl_s:
-            data = json.loads(cache.read_text(encoding="utf-8"))
-        else:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        for attempt in range(retries):
             wait = self.delay_s - (time.monotonic() - self._last)
             if wait > 0:
                 time.sleep(wait)
-            r = self.client.get(API_URL, params={**params, "key": self.key})
-            self._last = time.monotonic()
-            self.requests += 1
-            data = r.json()
-            code = (data.get("meta") or {}).get("code", r.status_code)
-            if code not in (200, 404):   # 404 is 2ГИС's "nothing found"
-                err = (data.get("meta") or {}).get("error") or {}
-                raise RuntimeError(f"2ГИС API {code}: {err.get('type')} {err.get('message', '')}".strip())
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            try:
+                r = self.client.get(url, params={**params, "key": self.key})
+                self._last = time.monotonic()
+                self.requests += 1
+                if r.status_code in (429, 502, 503, 504):
+                    raise httpx.TransportError(f"HTTP {r.status_code}")
+                data = r.json()
+                break
+            except (httpx.TransportError, ValueError) as e:
+                self._last = time.monotonic()
+                if attempt == retries - 1:
+                    raise RuntimeError(f"2ГИС unreachable: {e}") from e
+                time.sleep(2 ** attempt * 1.5)
+        code = (data.get("meta") or {}).get("code", r.status_code)
+        if code not in (200, 404):   # 404 is 2ГИС's "nothing found"
+            err = (data.get("meta") or {}).get("error") or {}
+            raise RuntimeError(f"2ГИС API {code}: {err.get('type')} {err.get('message', '')}".strip())
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return data
+
+    def search(self, q: str, lon: float, lat: float, radius: int, page: int = 1, page_size: int = PAGE_SIZE) -> list[dict]:
+        data = self.get({"q": q, "point": f"{lon:.6f},{lat:.6f}", "radius": radius, "page": page,
+                         "page_size": page_size, "fields": FIELDS, "locale": "ru_KZ"})
         return ((data.get("result") or {}).get("items")) or []
+
+    def rubric_page(self, rubric_id: str, page: int, cell: str | None = None) -> tuple[list[dict], int]:
+        """One page of a rubric's branches, city-wide or around a geohash cell: (items, total)."""
+        params = {"rubric_id": rubric_id, "region_id": REGION_ID, "page": page, "page_size": PAGE_SIZE,
+                  "fields": FIELDS, "locale": "ru_KZ"}
+        if cell:
+            lat, lon = cell_center(cell)
+            params.update(point=f"{lon:.6f},{lat:.6f}", radius=AREA_RADIUS[len(cell)])
+        data = self.get(params)
+        res = data.get("result") or {}
+        return res.get("items") or [], int(res.get("total") or 0)
 
 
 # ------------------------------------------------------------------ asking
@@ -227,11 +307,73 @@ def _save(conn, item: dict, place_id: str | None, query: str) -> None:
         (item["id"], place_id, primary_name(item), pt["lat"], pt["lon"], json.dumps(item, ensure_ascii=False), query))
 
 
+def _populated(conn, precision: int, min_places: int = 3, parent: str = "") -> list[str]:
+    rows = conn.execute("""select st_y(geom::geometry) lat, st_x(geom::geometry) lon from places
+                           where category <> 'anchor'""").fetchall()
+    n: dict[str, int] = {}
+    for r in rows:
+        c = geohash(r["lat"], r["lon"], precision)
+        if c.startswith(parent):
+            n[c] = n.get(c, 0) + 1
+    return sorted((c for c, k in n.items() if k >= min_places), key=lambda c: -n[c])
+
+
+class _Quota(Exception):
+    pass
+
+
+def import_rubrics(conn, client: DgisClient, limit: int, tiers: tuple[int, ...] = (1, 2, 3),
+                   fresh_days: int = 30) -> dict:
+    """Every branch of the rubrics people go out to, the most useful tiers first. A query gives at most 50
+    results: a rubric with more is asked district by district (~5 km), a dense district cell by cell (~1 km)."""
+    got: dict[str, int] = {}
+
+    def page(rid: str, cell: str | None, n: int) -> tuple[int, int]:
+        """(items on the page, total) — from the lookups when asked already."""
+        key = f"rubric:{rid}:{cell or 'city'}:{n}"
+        row = conn.execute("select found from dgis_lookups where key = %s and asked_at > now() - %s * interval '1 day'",
+                           (key, fresh_days)).fetchone()
+        tot = conn.execute("select found from dgis_lookups where key = %s", (f"rubric:{rid}:{cell or 'city'}:total",)).fetchone()
+        if row and tot:
+            return row["found"], tot["found"]
+        if client.requests >= limit:
+            raise _Quota
+        items, total = client.rubric_page(rid, n, cell)
+        for it in items:
+            if (it.get("point") or {}).get("lat") is not None:
+                _save(conn, it, None, key)
+        _remember(conn, key, len(items))
+        _remember(conn, f"rubric:{rid}:{cell or 'city'}:total", total)
+        conn.commit()
+        got[rid] = got.get(rid, 0) + len(items)
+        return len(items), total
+
+    def area(rid: str, cell: str | None) -> None:
+        k, total = page(rid, cell, 1)
+        if total > PAGE_SIZE * MAX_PAGES and (cell is None or len(cell) < 6):
+            for child in _populated(conn, 5 if cell is None else 6, parent=cell or ""):
+                area(rid, child)
+            return
+        n = 1
+        while k == PAGE_SIZE and n < MAX_PAGES:
+            n += 1
+            k, _ = page(rid, cell, n)
+
+    try:
+        for tier, rid, _ in RUBRIC_IMPORT:
+            if tier in tiers:
+                area(rid, None)
+    except _Quota:
+        pass
+    return got
+
+
 def enrich(conn, client: DgisClient, limit: int, fresh_days: int = 30) -> dict:
     """Each OSM place (the categories people go to) by its name around its point."""
     rows = conn.execute(
         """select id, name, name_ru, name_kk, name_en, category, st_y(geom::geometry) lat, st_x(geom::geometry) lon
            from places where source_id = 'osm' and category = any(%s) and name <> 'Детская площадка'
+             and not attrs ? '2gis:id'          -- already matched through a rubric import
            order by array_position(%s::text[], category), (hours_valid is false) desc, id""",
         (list(ENRICH_CATEGORIES), list(ENRICH_CATEGORIES))).fetchall()
     found = asked = 0
@@ -298,16 +440,51 @@ def merge(p: Place, item: dict) -> None:
     if not p.hours_valid and (oh := schedule_to_oh(item.get("schedule"))):
         p.opening_hours, p.hours_valid = oh, True
         p.attrs["opening_hours:source"] = p.attrs["2gis:url"]
-    names = " ".join(attribute_names(item))
-    if WIFI_RE.search(names) and not p.attrs.get("wifi"):
+    attrs_ = attributes(item)
+    names = " ".join(a["name"] for a in attrs_)
+    tags = {a["tag"] for a in attrs_}
+    if (WIFI_RE.search(names) or any("wifi" in t for t in tags)) and not p.attrs.get("wifi"):
         p.attrs["wifi"] = True
         p.attrs.setdefault("internet_access", "wlan")
         p.attrs["wifi:source"] = SOURCE_ID
     if SOCKET_RE.search(names):
         p.attrs["socket"] = "yes"
-    if STEP_FREE_RE.search(names) and "wheelchair" not in p.attrs:
+    if TAG_LAPTOP in tags:                         # "Можно с ноутбуком": a table, a socket, nobody minds
+        p.attrs["laptop"] = "yes"
+    step_free = [a["name"] for a in attrs_ if a["tag"].startswith(TAG_ACCESSIBLE) or STEP_FREE_RE.search(a["name"])]
+    if step_free and "wheelchair" not in p.attrs:
         p.attrs["wheelchair"] = "yes"
         p.attrs["wheelchair:source"] = SOURCE_ID
+    if step_free:
+        p.attrs["access:features"] = sorted(set(step_free))[:4]
+    if TAG_KIDS_MENU in tags or KIDS_AREA_RE.search(names):
+        p.attrs["kids_friendly"] = "kids_menu" if TAG_KIDS_MENU in tags and not KIDS_AREA_RE.search(names) else "kids_area"
+    if TAG_ENGLISH_MENU in tags:
+        p.attrs["english_menu"] = "yes"
+    if OUTDOOR_RE.search(names) and "outdoor_seating" not in p.attrs:
+        p.attrs["outdoor_seating"] = "yes"
+    for a in attrs_:
+        if a["tag"] == TAG_AVG_PRICE and (m := PRICE_RE.search(a["name"])):
+            p.attrs["avg_check"] = int(re.sub(r"\s", "", m[1]))
+        elif a["tag"] == TAG_CAPACITY:
+            p.attrs["capacity_text"] = a["name"]
+    addr = item.get("address") or {}
+    building = addr.get("building_name") or item.get("building_name")
+    if building and primary_name(item).lower() not in building.lower():
+        p.attrs["in_building"] = building            # "ТРЦ Керуен"
+        p.indoor = "indoor"
+    if item.get("address_comment"):
+        p.attrs["where_inside"] = item["address_comment"]   # "3 этаж", "вход со двора"
+    if (sc := (item.get("schedule") or {}).get("comment")):
+        p.attrs["hours_note"] = sc                   # "касса до 20:30; технический перерыв 13:00–13:30"
+    st = [s for s in (item.get("links") or {}).get("nearest_stations") or [] if s.get("distance") is not None]
+    if st:
+        s0 = min(st, key=lambda s: s["distance"])
+        p.attrs["nearest_station"] = {"name": s0.get("name"), "m": int(s0["distance"]),
+                                      "types": s0.get("route_types") or []}
+    badges = [b.get("text") for b in (item.get("flags") or {}).get("badges") or [] if b.get("text")]
+    if badges:
+        p.attrs["2gis:badges"] = badges[:2]
     c = contacts(item)
     p.phone = p.phone or c.get("phone")
     p.website = p.website or c.get("website")
@@ -317,7 +494,9 @@ def merge(p: Place, item: dict) -> None:
 
 def to_place(item: dict, fetched_at: datetime | None = None) -> Place | None:
     """A place OSM does not have, from its rubric; None when the rubric is not something people go out to."""
-    cat = category_for(item)
+    primary = [r for r in item.get("rubrics") or [] if r.get("kind") == "primary"] + list(item.get("rubrics") or [])
+    cat = next((RUBRIC_TAXONOMY[str(r.get("id"))] for r in primary if str(r.get("id")) in RUBRIC_TAXONOMY), None) \
+        or category_for(item)
     pt = item.get("point") or {}
     if cat is None or "lat" not in pt:
         return None

@@ -601,6 +601,9 @@ class Assistant:
             ev_bonus *= 0.3
         if it.persona == "tourist" and c.category in ("landmark", "culture"):
             bonus += 0.08
+        if it.persona == "tourist" and c.attrs.get("english_menu") == "yes":
+            bonus += 0.03
+            reasons.append("меню на английском (2ГИС)")
         rated = K.rating(c)
         if rated:   # how people rated it in 2ГИС: a nudge between equals, never a reason on its own
             bonus += max(-0.06, min(0.06, (rated[0] - 4.2) * 0.08))
@@ -731,14 +734,19 @@ class Assistant:
             if leave_by - at > timedelta(minutes=horizon):
                 leave_by = None
         sources = [u for u in [c.source_url, c.attrs.get("2gis:url")] + [e.get("url") for e in c.attached] if u]
+        # how to find it inside a big building: "ТРЦ Керуен, 3 этаж" (2ГИС)
+        where = ", ".join(x for x in (c.attrs.get("in_building"), c.attrs.get("where_inside")) if x) or None
+        warnings = list(s.warnings)
+        if c.attrs.get("hours_note") and len(c.attrs["hours_note"]) <= 120:
+            warnings.append(c.attrs["hours_note"])
         return Item(
             kind=c.kind, title=c.title, place_id=c.id if c.kind == "place" else (c.event or {}).get("place_id"),
             event_id=c.id if c.kind == "event" else None, category=c.category, subcategory=c.subcategory,
             lat=c.lat, lon=c.lon, distance_m=s.distance_m, walk_min=s.walk, by="taxi" if s.taxi else "walk",
-            arrive_at=start, visit_min=s.visit,
+            arrive_at=start, visit_min=s.visit, where=where,
             status=status, labels=self._labels(s, start), why=s.reasons[:4], group_fit=s.group_expl,
             group_detail=group_detail(c, group, start) if group else [], what_to_do=what, what_to_do_source=src,
-            confidence=s.confidence, sources=sources, warnings=s.warnings,
+            confidence=s.confidence, sources=sources, warnings=warnings,
             attached_event=c.attached[0]["title"] if c.attached else None, score=s.score, indoor=c.indoor,
             need_hits={n: v[0] for n, v in s.hits.items()}, starts_at=starts_at,
             window_end=s.window_end, leave_by=leave_by,

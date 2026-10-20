@@ -67,13 +67,16 @@ def cmd_dgis(args) -> None:
     import httpx
 
     from .places import dgis
-    client = dgis.DgisClient()
+    args.tier = args.tier or [1, 2, 3]
+    client = dgis.DgisClient(delay_s=args.delay)
     with store.connect() as conn:
         got = {}
         try:
-            if args.mode in ("enrich", "both"):
+            if args.mode in ("rubrics", "all"):
+                got["rubrics"] = dgis.import_rubrics(conn, client, args.limit, tiers=tuple(args.tier))
+            if args.mode in ("enrich", "all"):
                 got["enrich"] = dgis.enrich(conn, client, args.limit)
-            if args.mode in ("discover", "both"):
+            if args.mode == "discover":
                 got["discover"] = dgis.discover(conn, client, args.limit)
         except (RuntimeError, httpx.HTTPError) as e:   # quota, a blocked key, no network: keep what was found
             conn.rollback()
@@ -280,6 +283,7 @@ def main(argv: list[str] | None = None) -> None:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)   # its INFO line prints request URLs, API keys included
     p = argparse.ArgumentParser(prog="qydyr_data", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -348,7 +352,13 @@ def main(argv: list[str] | None = None) -> None:
     sm.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     sm.set_defaults(fn=cmd_mcp)
     sd = sub.add_parser("dgis", help="2ГИС Places API: hours, ratings, Wi-Fi, step-free entrances, more places")
-    sd.add_argument("--mode", choices=["enrich", "discover", "both"], default="both")
+    sd.add_argument("--mode", choices=["rubrics", "enrich", "discover", "all"], default="all",
+                    help="rubrics: every branch of the rubrics people go out to (the main one); enrich: the OSM places "
+                         "still unmatched, by name; discover: free-text queries around cells")
+    sd.add_argument("--tier", type=int, action="append", default=None,
+                    help="rubric tiers to import: 1 places to go (kids, museums, coworkings...), 2 coffee shops, "
+                         "restaurants, bars, 3 cafés and fast food. Default: all")
+    sd.add_argument("--delay", type=float, default=0.6, help="seconds between requests (the server drops fast clients)")
     sd.add_argument("--limit", type=int, default=500, help="network requests this run (the key has a quota)")
     sd.set_defaults(fn=cmd_dgis)
     sub.add_parser("dgis-probe", help="one request to each 2ГИС API, raw answers to data/dgis_probe.zip").set_defaults(

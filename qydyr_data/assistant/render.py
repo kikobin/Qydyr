@@ -48,6 +48,8 @@ def render(ans: Answer) -> str:
     for i, it in enumerate(ans.items, 1):
         walk = "прямо здесь" if it.walk_min == 0 else f"{it.walk_min} мин {'на такси' if it.by == 'taxi' else 'пешком'}"
         lines += ["", f"{i}. {it.title} — {walk} ({it.distance_m} м)", f"   {it.status}"]
+        if it.where:
+            lines.append(f"   Где: {it.where}")
         if it.leave_by:
             lines.append("   Выходите сейчас, чтобы успеть" if it.leave_by <= ans.at + timedelta(minutes=1)
                          else f"   Выходите до {_hm(it.leave_by)}, чтобы успеть")

@@ -207,6 +207,7 @@ function itemCard(it, i) {
         <h2>${esc(it.title)}</h2>
         <div class="status"><span class="dot ${live}"></span><span>${esc(it.status)}</span></div>
         <span class="meta">${esc(walk)} · ${esc(dist)} · ${esc(t.stay)} ${lo === hi ? lo : `${lo}–${hi}`} ${esc(t.min)}</span>
+        ${it.where ? `<span class="meta" style="font-family:var(--font-body)">${I.pin("i-s")} ${esc(it.where)}</span>` : ""}
         ${leave ? `<span class="leave">${I.clock("i-s")}${esc(leave)}</span>` : ""}
       </div></div>
     ${full ? `

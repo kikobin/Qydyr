@@ -127,3 +127,118 @@ def test_enrich_discover_apply(db, sample_places, tmp_path, monkeypatch):
     item = next(i for i in ans.items if i.title == "Coffee Boom")
     assert any("рейтинг 4,7 в 2ГИС, 320 отзывов" in w for w in item.why)
     assert item.need_hits["socket"] == "yes" and any("2gis.kz" in s for s in item.sources)
+    assert item.where == "БЦ Изумрудный квартал, 1 этаж"                                  # where inside, from 2ГИС
+
+
+# ------------------------------------------------------------------ rubric import and the tags 2ГИС really returns
+def item(iid, name, lat, lon, rubric=("162", "Кофейни"), tags=(), **extra):
+    """An item shaped like the real 3.0 answer (seen with dgis-probe): rubric ids, attribute tags, address."""
+    groups = {}
+    for group, name_, tag in tags:
+        groups.setdefault(group, []).append({"name": name_, "tag": tag})
+    return {"id": iid, "type": "branch", "name": name, "name_ex": {"primary": name}, "point": {"lat": lat, "lon": lon},
+            "rubrics": [{"id": rubric[0], "name": rubric[1], "kind": "primary"}],
+            "attribute_groups": [{"name": g, "attributes": a} for g, a in groups.items()], **extra}
+
+
+def test_merge_reads_the_tags():
+    it = item("70000001000000101", "Тихая чашка", 51.1, 71.4, tags=[
+        ("Ресторан / Кафе", "Чек 3 000 ₸", "food_service_avg_price"),
+        ("Ресторан / Кафе", "Можно с ноутбуком", "food_service_cafe_working"),
+        ("Ресторан / Кафе", "Детское меню", "food_service_details_food_kids_menu"),
+        ("Ресторан / Кафе", "Меню на английском", "food_service_details_food_english_menu"),
+        ("Ресторан / Кафе", "До 45 мест", "food_service_capacity"),
+        ("Доступная среда", "Пандус", "accessible_entrance_inclusive_environment_ramp_inclusive"),
+        ("Доступная среда", "Широкий лифт", "accessible_entrance_inclusive_environment_elevator_inclusive")],
+        address={"building_name": "ТРЦ Керуен"}, address_comment="3 этаж",
+        schedule={"Mon": day("10:00", "22:00"), "comment": "кухня до 21:30"},
+        links={"nearest_stations": [{"name": "Керуен", "distance": 420, "route_types": ["bus"]},
+                                    {"name": "Дальняя", "distance": 900, "route_types": ["bus"]}]})
+    p = place("osm:node/9", "Тихая чашка", 51.1, 71.4, category="food", subcategory="cafe", indoor="unknown")
+    dgis.merge(p, it)
+    a = p.attrs
+    assert a["avg_check"] == 3000 and a["capacity_text"] == "До 45 мест"
+    assert (a["laptop"], a["kids_friendly"], a["english_menu"]) == ("yes", "kids_menu", "yes")
+    assert a["wheelchair"] == "yes" and a["access:features"] == ["Пандус", "Широкий лифт"]
+    assert (a["in_building"], a["where_inside"], p.indoor) == ("ТРЦ Керуен", "3 этаж", "indoor")
+    assert a["hours_note"] == "кухня до 21:30" and a["nearest_station"] == {"name": "Керуен", "m": 420, "types": ["bus"]}
+    # a mall is not "in" itself
+    mall = place("osm:way/7", "ТРЦ Керуен", 51.1, 71.4, category="shopping", subcategory="mall")
+    dgis.merge(mall, item("70000001000000102", "ТРЦ Керуен", 51.1, 71.4, rubric=("19499", "ТРЦ"),
+                          address={"building_name": "ТРЦ Керуен"}))
+    assert "in_building" not in mall.attrs
+
+
+def test_to_place_by_rubric_id():
+    kids = dgis.to_place(item("1", "Мадагаскар", 51.1, 71.4, rubric=("16743", "Детские игровые залы")))
+    assert (kids.category, kids.subcategory, kids.source_id) == ("kids", "kids_centre", "2gis")
+    # the primary rubric is not ours, an additional one is: still a coffee shop
+    both = item("2", "Кофе и доставка", 51.1, 71.4, rubric=("1203", "Доставка еды"))
+    both["rubrics"].append({"id": "162", "name": "Кофейни", "kind": "additional"})
+    assert dgis.to_place(both).subcategory == "cafe"
+    assert dgis.to_place(item("3", "Шиномонтаж", 51.1, 71.4, rubric=("405", "Шиномонтаж"))) is None
+
+
+class RubricApi:
+    """2ГИС answering rubric_id queries: a city-wide total, at most 10 per page and 5 pages, like the demo key."""
+    def __init__(self, city_total: dict[str, int], per_cell: int = 12):
+        self.city_total, self.per_cell, self.calls = city_total, per_cell, []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        q = request.url.params
+        rid, page, size = q["rubric_id"], int(q["page"]), int(q["page_size"])
+        assert size <= 10 and page <= 5, "the key refuses bigger pages"
+        self.calls.append((rid, q.get("point"), page))
+        total = self.per_cell if q.get("point") else self.city_total.get(rid, 0)
+        lon, lat = map(float, q["point"].split(",")) if q.get("point") else (71.43, 51.13)
+        tag = (q.get("point") or "city").replace(",", "")
+        items = [item(f"7{rid}{tag}{k}".replace(".", ""), f"{rid} №{k}", lat + k * 1e-4, lon, rubric=(rid, "x"))
+                 for k in range((page - 1) * size, min(total, page * size))]
+        if not items:
+            return httpx.Response(200, json={"meta": {"code": 404, "error": {"type": "itemNotFound"}}})
+        return httpx.Response(200, json={"meta": {"code": 200}, "result": {"items": items, "total": total}})
+
+
+def test_import_rubrics_pages_splits_and_resumes(db, sample_places, tmp_path, monkeypatch):
+    load_everything(db, sample_places)
+    store.init_db(db)
+    monkeypatch.setattr(dgis, "RUBRIC_IMPORT", [(1, "16743", ("kids", "kids_centre", "indoor")),
+                                                (2, "162", ("food", "cafe", "indoor"))])
+    api = RubricApi({"16743": 23, "162": 75})
+    c = client(tmp_path, api)
+    got = dgis.import_rubrics(db, c, limit=1000)
+    assert got["16743"] == 23 and [p for r, pt, p in api.calls if r == "16743"] == [1, 2, 3]   # 3 pages, city-wide
+    cells = {pt for r, pt, _ in api.calls if r == "162" and pt}
+    assert cells and got["162"] == 10 + 12 * len(cells)      # 75 > 50: asked district by district instead
+    stored = db.execute("select count(*) n from dgis_items").fetchone()["n"]
+    assert stored == got["16743"] + got["162"]
+    # a second run spends nothing: every page is in dgis_lookups
+    c2 = client(tmp_path / "again", RubricApi({"16743": 23, "162": 75}))
+    assert dgis.import_rubrics(db, c2, limit=1000) == {} and c2.requests == 0
+    # the quota stops a run cleanly, and the next one continues
+    db.execute("delete from dgis_lookups")
+    c3 = client(tmp_path / "third", RubricApi({"16743": 23, "162": 75}))
+    dgis.import_rubrics(db, c3, limit=2)
+    assert c3.requests == 2
+    places = store.load_places(db)
+    _, added = dgis.apply(db, places)
+    assert added == stored and sum(p.subcategory == "kids_centre" and p.source_id == "2gis" for p in places) == 23
+
+
+def test_needs_read_2gis_attrs():
+    from qydyr_data.assistant import knowledge as K
+    from qydyr_data.assistant.intent import parse_rules
+
+    def cafe(**attrs):
+        return K.Cand(kind="place", id="c", title="c", lat=0, lon=0, category="food", subcategory="cafe", attrs=attrs)
+    assert K.need_match(cafe(avg_check=2500), "cheap") == ("yes", "средний чек 2 500 ₸ (2ГИС)")
+    assert K.need_match(cafe(avg_check=5000), "cheap")[0] == "likely"
+    assert K.need_match(cafe(avg_check=12000), "cheap")[0] == "no"
+    assert K.need_match(cafe(laptop="yes"), "socket") == ("yes", "можно с ноутбуком (2ГИС)")
+    assert K.need_match(cafe(kids_friendly="kids_area"), "kids")[0] == "yes"
+    assert K.need_match(cafe(kids_friendly="kids_menu"), "kids")[0] == "likely"
+    assert K.need_match(cafe(wheelchair="yes", **{"access:features": ["Пандус", "Широкий лифт"]}), "accessible") \
+        == ("yes", "пандус, широкий лифт (2ГИС)")
+    assert K.need_match(cafe(wifi=True, **{"wifi:source": "2gis"}), "wifi") == ("yes", "Wi‑Fi (2ГИС)")
+    assert "cheap" in parse_rules("где недорого поесть у Байтерека").needs
+    assert "cheap" in parse_rules("арзан кафе").needs and "cheap" not in parse_rules("кафе с видом").needs

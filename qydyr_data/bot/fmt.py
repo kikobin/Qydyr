@@ -125,7 +125,7 @@ def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False, gps_age: 
     for i, it in enumerate(ans["items"], 1):
         lines.append("")
         lines.append(f"<b>{i}. {e(it['title'])}</b> — {e(walk_text(it, lang))}")
-        lines.append(e(it["status"]))
+        lines.append(e(it["status"]) + (f" · {e(it['where'])}" if it.get("where") else ""))
         if it.get("leave_by"):
             lb = dt(it["leave_by"])
             lines.append(f"<b>{e(t(lang, 'leave_now'))}</b>" if lb <= dt(ans["at"]) + timedelta(minutes=1)

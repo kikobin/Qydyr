@@ -39,6 +39,7 @@ NEED_PATTERNS: dict[str, str] = {
     "night": r"ночн|ночью|\bночи\b|поздно|после полуночи|\bnight\b|\blate\b|түнгі|түнде",
     "nightlife": r"\bбар\b|\bбары\b|\bбаре\b|клуб|вечеринк|туса|nightlife|party|\bbar\b",
     "free": r"бесплатн|без денег|(?<!step-)(?<!step )\bfree\b|тегін",
+    "cheap": r"недорог|не дорог|дешев|дёшев|бюджетн|экономн|по карману|арзан|қымбат емес|cheap|budget|inexpensive|affordable",
     "indoor": r"в помещени|внутри|под крышей|погреться|согреться|не мерзнуть|не мёрзнуть|indoor|жылы жер",
     "accessible": r"коляск|инвалидн|без ступен|пандус|маломобил|мүгедек|wheelchair|step-?free|accessible",
     "romantic": r"свидани|романтич|романтик|с девушкой|с парнем|\bdate\b|romantic",

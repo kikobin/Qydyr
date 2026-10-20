@@ -27,6 +27,7 @@ VISIT: dict[str, tuple[int, int]] = {
     "concert_hall": (90, 120), "events_venue": (60, 120), "exhibition_centre": (45, 90),
     "place_of_worship": (15, 30), "hookah": (60, 120), "karaoke": (90, 150), "biergarten": (60, 90),
     "stadium": (90, 150), "dance": (60, 90), "books": (20, 40), "souvenir": (15, 30), "kids_centre": (60, 90),
+    "anticafe": (60, 120), "vr": (45, 60),
 }
 EVENT_VISIT = {"exhibition": (40, 60), "concert": (90, 120), "performance": (120, 150), "festival": (60, 120),
                "fair": (45, 90), "workshop": (90, 120), "lecture": (60, 90), "party": (120, 180),
@@ -35,6 +36,8 @@ EVENT_VISIT = {"exhibition": (40, 60), "concert": (90, 120), "performance": (120
 
 IDEAS = {
     "kids_centre": "дайте ребёнку поиграть, а сами передохните рядом",
+    "anticafe": "возьмите настольную игру и чай: платите за время, а не за меню",
+    "vr": "запишитесь на ближайший сеанс: обычно это 30–60 минут",
     "museum": "начните с главного зала, потом — временная экспозиция",
     "gallery": "посмотрите текущую выставку целиком, это не займёт много времени",
     "theatre": "проверьте в кассе спектакли на сегодня",
@@ -77,11 +80,12 @@ NEED_LABELS = {
     "playground": "детская площадка", "interactive": "интерактив", "museum": "музей", "culture": "культура",
     "park": "парк", "walk": "прогулка", "view": "вид", "unusual": "необычное", "night": "ночью",
     "nightlife": "бар/клуб", "free": "бесплатно", "indoor": "в помещении", "accessible": "доступно для колясок",
-    "romantic": "свидание", "photo": "фото", "shopping": "шопинг", "event": "события",
+    "romantic": "свидание", "photo": "фото", "shopping": "шопинг", "event": "события", "cheap": "недорого",
 }
 
 QUIET_SUBS = {"library", "museum", "gallery", "coworking", "garden", "books"}
-NOISY_SUBS = {"bar", "pub", "nightclub", "karaoke", "stadium", "mall", "fast_food", "food_court", "arcade", "trampoline_park", "bowling"}
+NOISY_SUBS = {"bar", "pub", "nightclub", "karaoke", "stadium", "mall", "fast_food", "food_court", "arcade", "trampoline_park",
+              "bowling", "kids_centre", "vr"}
 KIDS_YES = {"playground", "zoo", "aquarium", "trampoline_park", "theme_park", "water_park", "ice_cream", "kids_centre"}
 KIDS_LIKELY = {"museum", "mall", "park", "garden", "cinema", "planetarium", "ice_rink", "arcade", "bowling", "cafe",
                "fountain", "minigolf"}
@@ -190,7 +194,7 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
     if need == "coffee":
         if sub == "cafe":
             return "yes", "кофейня/кафе"
-        if sub in {"restaurant", "fast_food", "food_court", "coworking", "mall"}:
+        if sub in {"restaurant", "fast_food", "food_court", "coworking", "mall", "anticafe"}:
             return "likely", "обычно есть кофе"
         return "no" if sub in {"playground", "artwork", "memorial", "monument", "viewpoint", "fountain"} else "unknown", ""
     if need == "food":
@@ -206,6 +210,10 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
             return "yes", "коворкинг"
         if a.get("socket") == "yes":
             return "yes", "розетки (2ГИС)"
+        if a.get("laptop") == "yes":
+            return "yes", "можно с ноутбуком (2ГИС)"
+        if sub == "anticafe":
+            return "likely", "антикафе: столы и розетки обычно есть"
         if a.get("wifi") or a.get("internet_access") in ("wlan", "yes", "wifi"):
             return "likely", "есть Wi‑Fi — розетки обычно есть, но не гарантированы"
         return ("likely", "") if sub in {"library", "cafe"} else ("unknown", "")
@@ -226,6 +234,10 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
             return "no", ""
         if sub in KIDS_YES or "kids" in attached_kinds:
             return "yes", "подходит детям"
+        if a.get("kids_friendly") == "kids_area":
+            return "yes", "детская зона (2ГИС)"
+        if a.get("kids_friendly") == "kids_menu":
+            return "likely", "детское меню (2ГИС)"
         if "интерактив" in _desc(c) or a.get("interactive") == "yes":
             return "yes", "интерактивные экспозиции"
         return ("likely", "семейное место") if sub in KIDS_LIKELY else ("unknown", "")
@@ -278,11 +290,21 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
         if sub in PUBLIC_FREE:
             return "likely", "общественное место"
         return "unknown", ""
+    if need == "cheap":
+        check = a.get("avg_check")
+        if check:
+            label = f"средний чек {int(check):,} ₸ (2ГИС)".replace(",", " ")
+            return ("yes", label) if check <= 3500 else ("likely", label) if check <= 6000 else ("no", label)
+        if sub in PUBLIC_FREE or a.get("fee") == "no":
+            return "yes", "бесплатно"
+        return ("likely", "обычно недорого") if sub in {"fast_food", "food_court", "anticafe", "ice_cream", "library"} else ("unknown", "")
     if need == "indoor":
         return {"indoor": ("yes", "в помещении"), "mixed": ("likely", "частично в помещении"),
                 "outdoor": ("no", "")}.get(c.indoor, ("unknown", ""))
     if need == "accessible":
         w = a.get("wheelchair")
+        if w == "yes" and a.get("access:features"):
+            return "yes", ", ".join(a["access:features"][:3]).lower() + " (2ГИС)"
         if w is None and sub == "mall":   # OSM rarely marks it; a big mall in Astana is built with lifts and ramps
             return "likely", "крупный торговый центр: обычно лифты и пандусы, но в OpenStreetMap не отмечено"
         return {"yes": ("yes", f"отмечено в {_src(a, 'wheelchair')}"), "limited": ("likely", f"частично доступно ({_src(a, 'wheelchair')})"),
