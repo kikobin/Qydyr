@@ -4,6 +4,7 @@
   places [--from-file F]      OpenStreetMap -> places + opening intervals
   events [--source ID] [--no-llm] [--no-geocode] [--prune]
                               afishas / venue pages / Telegram -> events + sessions
+  audit [--scenario ID]       the city page: where typical requests find nothing nearby
   run-all                     places (if older than a day) + events — what the cron job runs
   whats-on --lat --lon        what is on nearby now (or --at "2026-10-23 19:10")
   near --lat --lon            places nearby with open/closed state
@@ -227,6 +228,16 @@ def cmd_mcp(args) -> None:
     mcp_main(transport=args.transport)
 
 
+def cmd_audit(args) -> None:
+    """Qydyr for the city: ask the typical requests in every populated ~1 km cell, store the gaps."""
+    from . import city
+    scenarios = [city.BY_ID[s] for s in args.scenario] if args.scenario else None
+    with store.connect() as conn:
+        gaps = city.run_audit(conn, scenarios)
+    for sid, n in gaps.items():
+        print(f"{sid}: {n} cells where the request has no close, confirmed answer")
+
+
 def cmd_unmatched(args) -> None:
     with store.connect() as conn:
         rows = store.unmatched_venues(conn, args.limit)
@@ -310,6 +321,9 @@ def main(argv: list[str] | None = None) -> None:
     sm = sub.add_parser("mcp", help="Astana City MCP server (for Claude Desktop and other MCP clients)")
     sm.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     sm.set_defaults(fn=cmd_mcp)
+    sc = sub.add_parser("audit", help="city audit: where typical requests find nothing nearby (for /app/city.html)")
+    sc.add_argument("--scenario", action="append", help="kids_evening, work_quiet, step_free, night, frost, events")
+    sc.set_defaults(fn=cmd_audit)
     su = sub.add_parser("unmatched")
     su.add_argument("--limit", type=int, default=30)
     su.set_defaults(fn=cmd_unmatched)

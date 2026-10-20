@@ -26,6 +26,7 @@ class PulseEvent:
     items: int
     surprise: bool = False
     feedback: dict[str, int] = field(default_factory=dict)
+    unmet: list[str] = field(default_factory=list)   # needs no answer covered: "ищут и не находят"
 
 
 class Pulse:
@@ -35,15 +36,30 @@ class Pulse:
         self.lock = threading.Lock()
 
     def record(self, lat: float, lon: float, needs: list[str], lang: str, items: int, surprise: bool = False,
-               now: float | None = None) -> None:
+               now: float | None = None, unmet: list[str] | None = None) -> None:
         ev = PulseEvent(ts=now or time.time(), cell=geohash(lat, lon, 6), needs=list(needs)[:4], lang=lang,
-                        items=items, surprise=surprise)
+                        items=items, surprise=surprise, unmet=list(unmet or [])[:4])
         with self.lock:
             self.events.append(ev)
 
     def vote(self, up: bool) -> None:
         with self.lock:
             self.votes["up" if up else "down"] += 1
+
+    def unmet_live(self, now: float | None = None) -> list[dict]:
+        """The last hours, before the daily counts reach DEMAND_K: needs that found nothing, by cell."""
+        now = now or time.time()
+        with self.lock:
+            live = [e for e in self.events if now - e.ts <= WINDOW_S and e.unmet]
+        by: dict[tuple[str, str], int] = Counter()
+        for e in live:
+            for n in e.unmet:
+                by[(e.cell, n)] += 1
+        out = []
+        for (cell, need), k in by.most_common(30):
+            lat, lon = cell_center(cell)
+            out.append({"cell": cell, "lat": round(lat, 4), "lon": round(lon, 4), "need": need, "n": k})
+        return out
 
     def snapshot(self, now: float | None = None, recent: int = 12) -> dict:
         now = now or time.time()
@@ -69,7 +85,8 @@ class Pulse:
             "top_needs": [{"need": n, "n": k} for n, k in needs_all.most_common(8)],
             "langs": dict(langs),
             "recent": [{"ago_s": int(now - e.ts), "needs": e.needs, "lang": e.lang, "items": e.items,
-                        "surprise": e.surprise} for e in reversed(live[-recent:])],
+                        "surprise": e.surprise, "unmet": e.unmet} for e in reversed(live[-recent:])],
+            "unmet_needs": [{"need": n, "n": k} for n, k in Counter(n for e in live for n in e.unmet).most_common(6)],
             "votes": votes,
         }
 

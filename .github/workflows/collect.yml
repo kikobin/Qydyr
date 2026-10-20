@@ -35,6 +35,8 @@ jobs:
         run: python -m qydyr_data places
       - name: Events
         run: python -m qydyr_data events
+      - name: City audit (where typical requests find nothing nearby)
+        run: python -m qydyr_data audit
       - name: Report
         if: always()
         run: |

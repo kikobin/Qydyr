@@ -269,7 +269,9 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
                 "outdoor": ("no", "")}.get(c.indoor, ("unknown", ""))
     if need == "accessible":
         w = a.get("wheelchair")
-        return {"yes": ("yes", "доступно для колясок (OpenStreetMap)"), "limited": ("likely", "частично доступно"),
+        if w is None and sub == "mall":   # OSM rarely marks it; a big mall in Astana is built with lifts and ramps
+            return "likely", "крупный торговый центр: обычно лифты и пандусы, но в OpenStreetMap не отмечено"
+        return {"yes": ("yes", "отмечено в OpenStreetMap"), "limited": ("likely", "частично доступно (OpenStreetMap)"),
                 "no": ("no", "")}.get(w, ("unknown", ""))
     if need == "romantic":
         return ("likely", "") if sub in ROMANTIC_SUBS else ("unknown", "")

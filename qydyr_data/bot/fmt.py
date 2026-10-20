@@ -223,7 +223,7 @@ def answer_keyboard(ans: dict, lang: str = "ru", *, private: bool = True, webapp
     for ci, c in enumerate(ans["chips"] if private else []):
         if c["key"] == "budget" or (c["key"] == "mode" and c["assumed"]):
             chips.append(_cb(f"{chip_label(c, ans, lang)} · {t(lang, 'change')}", f"c:{aid}:{ci}"))
-        elif c["key"] in ("kids", "only_events"):   # a switch: "+ с ребёнком" on, "✕ с ребёнком" off
+        elif c["key"] in ("kids", "only_events", "wheelchair"):   # a switch: "+ без ступенек" on, "✕ без ступенек" off
             chips.append(_cb(t(lang, "chip_remove" if c["active"] else "chip_add", label=chip_label(c, ans, lang)),
                              f"c:{aid}:{ci}"))
     for k in range(0, len(chips), 2):

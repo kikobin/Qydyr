@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qydyr для города</title>
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  body { overflow: auto; background: #070F1C; }
+  :root { --none: #FF7A7A; --guess: #B79CFF; --far: #FEC50C; --ok: #00AFCA; }
+  .city { max-width: 1320px; margin: 0 auto; padding: 28px 24px 56px; display: flex; flex-direction: column; gap: 28px; }
+  .c-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .c-title { display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .c-title .logo { width: 48px; height: 48px; flex-shrink: 0; }
+  .c-title h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: clamp(24px, 3vw, 36px); letter-spacing: -0.02em; }
+  .c-title p { margin: 4px 0 0; color: var(--text-2); font-size: 15px; }
+  .links { display: flex; gap: 10px; flex-wrap: wrap; }
+  .links a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text); text-decoration: none; font-size: 14px; }
+  .links a:hover { border-color: var(--sky); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 20px; background: var(--surface); border: 1px solid #1D3150; }
+  .kpi b { font-family: var(--font-display); font-weight: 600; font-size: 26px; }
+  .kpi span { font-size: 13px; color: var(--text-2); line-height: 1.35; }
+  .kpi.warn b { color: var(--far); }
+  section h2 { margin: 0 0 6px; font-family: var(--font-display); font-weight: 600; font-size: clamp(19px, 2vw, 24px); letter-spacing: -0.01em; }
+  section > p.lead { margin: 0 0 16px; color: var(--text-2); font-size: 15px; line-height: 1.5; max-width: 860px; }
+  .scen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .scen button { min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+  .scen button[aria-pressed="true"] { background: var(--sky); color: var(--sky-ink); border-color: var(--sky); font-weight: 600; }
+  .audit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; }
+  .c-map { position: relative; min-height: 520px; border-radius: 24px; overflow: hidden; border: 1px solid #1D3150; background: var(--bg); }
+  #cmap { position: absolute; inset: 0; }
+  .legend { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border-radius: 14px; background: var(--overlay); border: 1px solid var(--line); font-size: 12px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+  .panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px; background: var(--surface); border: 1px solid #1D3150; min-width: 0; }
+  .panel h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+  .req { font-size: 15px; line-height: 1.45; }
+  .req q { font-weight: 600; }
+  .req .when { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
+  .stack { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--card); }
+  .stack span { display: block; height: 100%; }
+  .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; font-size: 13px; color: var(--text-2); }
+  .counts b { color: var(--text); font-family: var(--font-mono); font-weight: 500; }
+  .gap { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 14px; background: var(--card); border-left: 4px solid var(--none); cursor: pointer; }
+  .gap.far { border-left-color: var(--far); }
+  .gap.guess { border-left-color: var(--guess); }
+  .gap b { font-size: 14px; }
+  .gap span { font-size: 13px; color: var(--text-2); line-height: 1.35; }
+  .why { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.45; }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .bar { display: grid; grid-template-columns: 150px minmax(0, 1fr) 70px; align-items: center; gap: 10px; font-size: 14px; }
+  .bar .track { height: 10px; border-radius: 5px; background: var(--card); overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--sky); }
+  .bar .fill.bad { background: var(--none); }
+  .bar em { font-style: normal; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); text-align: right; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+  td.cnt { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+  td a { color: var(--text); }
+  td .muted, .muted { color: var(--text-3); font-size: 12px; }
+  .zero { color: var(--far); }
+  .table-wrap { overflow-x: auto; }
+  ul.plain { margin: 0; padding-left: 18px; color: var(--text-2); line-height: 1.6; font-size: 14px; }
+  .empty { color: var(--text-3); font-size: 14px; }
+  .maplibregl-popup-content { font-size: 13px; line-height: 1.4; max-width: 260px; }
+  @media (max-width: 980px) { .audit-grid, .two { grid-template-columns: 1fr; } .c-map { min-height: 420px; } .bar { grid-template-columns: 110px minmax(0, 1fr) 64px; } }
+  @media (max-width: 520px) { .city { padding: 20px 16px 40px; gap: 22px; } .kpi { padding: 14px; } .kpi b { font-size: 22px; } .c-title .logo { width: 40px; height: 40px; } }
+</style>
+<script type="module" src="assets/city.js"></script>
+</head>
+<body>
+<main class="city">
+  <header class="c-head">
+    <div class="c-title"><span id="logo"></span><div><h1>Qydyr для города</h1><p>Где Астана не отвечает на обычные запросы жителей — по реальным данным, ячейками ~1 км</p></div></div>
+    <nav class="links"><a href="./">Открыть Qydyr</a><a href="pulse.html">Пульс Астаны</a></nav>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="Коротко"><div class="kpi"><b>—</b><span>загружаю…</span></div></section>
+
+  <section aria-labelledby="h-audit">
+    <h2 id="h-audit">Чего не хватает городу</h2>
+    <p class="lead">Qydyr сам задаёт типовой запрос из центра каждой ячейки ~1 км, где есть хотя бы 3 места, и смотрит, что реально подходит по нашей базе: открыто ли в это время, успеет ли человек дойти, отвечает ли место на просьбу. Красное — ничего, жёлтое — только далеко, фиолетовое — только «вероятно», без подтверждения в данных.</p>
+    <div class="scen" id="scen" role="group" aria-label="Сценарий"></div>
+    <div class="audit-grid">
+      <div class="c-map"><div id="cmap" role="img" aria-label="Карта пробелов по ячейкам"></div>
+        <div class="legend"><span><i style="background:var(--none)"></i>ничего рядом</span><span><i style="background:var(--guess)"></i>только «вероятно»</span><span><i style="background:var(--far)"></i>дальше 15 мин</span><span><i style="background:var(--ok);opacity:.55"></i>есть рядом</span></div>
+      </div>
+      <aside class="panel" id="side"><span class="empty">загружаю аудит…</span></aside>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-demand">
+    <h2 id="h-demand">Ищут и не находят</h2>
+    <p class="lead">Живые запросы к Qydyr — только как счётчики: ячейка ~1 км, понятая просьба и день. Без текста, координат и людей. Ячейка появляется, когда в ней спросили хотя бы <span id="k">3</span> раза: так никто не выделяется.</p>
+    <div class="two">
+      <div class="panel"><h3>За 30 дней: что не нашли</h3><div id="needs" style="display:flex;flex-direction:column;gap:10px"><span class="empty">—</span></div></div>
+      <div class="panel"><h3>Последние 3 часа</h3><div id="live" style="display:flex;flex-direction:column;gap:8px"><span class="empty">—</span></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-data">
+    <h2 id="h-data">Откуда данные</h2>
+    <p class="lead">Каждый ответ Qydyr стоит на этих источниках. Сбор автоматический, по расписанию; у каждого события хранится цитата из источника, у каждого факта прогулки — ссылка. Что не знаем — показываем как «неизвестно».</p>
+    <div class="two">
+      <div class="panel"><h3>Полнота базы</h3><div id="coverage" style="display:flex;flex-direction:column;gap:12px"><span class="empty">—</span></div></div>
+      <div class="panel"><h3>Как обновляется</h3><div id="schedule"><span class="empty">—</span></div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h3>Источники</h3><div class="table-wrap" id="sources"><span class="empty">—</span></div></div>
+  </section>
+
+  <section aria-labelledby="h-privacy">
+    <h2 id="h-privacy">Что хранится</h2>
+    <ul class="plain">
+      <li>Аудит города — это запросы, которые Qydyr задаёт сам: в нём нет данных людей.</li>
+      <li>Живой спрос — счётчики по дню, ячейке ~1 км и типу просьбы. Текст запроса, точные координаты и аккаунты не хранятся.</li>
+      <li>Ячейки, где спросили меньше 3 раз, не показываются. «Последние 3 часа» живут только в памяти сервера.</li>
+      <li>Место без отметки в OpenStreetMap не объявляется доступным или открытым: оно попадает в «вероятно» или «неизвестно».</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

@@ -36,7 +36,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from . import settings, store
+from . import city, settings, store
 from .assistant import placeqa
 from .assistant import tours as TOURS
 from .assistant.mascot import weather_view
@@ -237,7 +237,7 @@ def _check_overrides(o: Overrides | None) -> None:
             raise HTTPException(422, f"{name}: 0–1440 minutes")
 
 
-def _run(body: AskIn, data: DbData) -> dict:
+def _run(body: AskIn, data: DbData, record: bool = True) -> dict:
     _check_overrides(body.overrides)
     if body.lat is not None and body.lon is not None:  # ~100 m is enough for walking minutes; exact GPS is not kept
         body.lat, body.lon = round(body.lat, 3), round(body.lon, 3)
@@ -246,10 +246,18 @@ def _run(body: AskIn, data: DbData) -> dict:
     ans = assistant.ask(text, at=_local(body.at), lat=body.lat, lon=body.lon, members=body.members,
                         overrides=body.overrides, weather_preset=body.weather_preset, surprise=body.surprise,
                         seed=body.seed, anchor=body.anchor.model_copy() if body.anchor else None, **_demo_kw())
-    if ans.anchor is not None:
+    if ans.anchor is not None and record:   # a chip edit re-runs the same request: it is not a new person asking
+        needs, unmet = city.unmet_needs(ans.intent, ans.items)
         PULSE.record(ans.anchor.lat, ans.anchor.lon, list(ans.intent.needs), ans.intent.lang, len(ans.items),
-                     body.surprise)
-        log.info("ask cell=%s items=%d", geohash(ans.anchor.lat, ans.anchor.lon, 6), len(ans.items))
+                     body.surprise, unmet=unmet)
+        cell = geohash(ans.anchor.lat, ans.anchor.lon, city.CELL_PRECISION)
+        log.info("ask cell=%s items=%d", cell, len(ans.items))
+        if needs:
+            try:   # counts for the city page; the person's answer never waits on or fails because of it
+                store.record_demand(data.conn, cell, needs, unmet, ans.at.date())
+            except Exception as e:
+                log.warning("demand not recorded: %s", e)
+                data.conn.rollback()
     lang = body.lang or ans.intent.lang
     narrator = _narrator() if body.llm else None
     out: dict[str, Any] = {"lang": "ru", "translated": False}
@@ -314,7 +322,7 @@ def ask_patch(answer_id: str, body: PatchIn, data: DbData = Depends(get_data)) -
     except (ValidationError, TypeError) as e:
         raise HTTPException(422, f"bad patch: {e.__class__.__name__}")
     req.format = body.format
-    return _run(req, data)
+    return _run(req, data, record=False)
 
 
 @app.get("/answer/{answer_id}")
@@ -547,6 +555,32 @@ def pulse(at: datetime | None = None, data: DbData = Depends(get_data)) -> dict:
     snap["now_on"] = [{"title": e["title"], "venue": e.get("venue"), "badge": describe_event(e),
                        "lat": e["lat"], "lon": e["lon"], "state": e["state"]} for e in now_on[:12]]
     return snap
+
+
+# ------------------------------------------------------------------ Qydyr for the city (/app/city.html)
+@app.get("/city/scenarios")
+def city_scenarios() -> list[dict]:
+    return city.scenarios_view()
+
+
+@app.get("/city/gaps")
+def city_gaps(scenario: str = Query("kids_evening", pattern="^[a-z_]{1,32}$"), data: DbData = Depends(get_data)) -> dict:
+    """Where the city cannot answer a typical request: the supply audit, cell by cell (~1 km)."""
+    if scenario not in city.BY_ID:
+        raise HTTPException(404, "no such scenario")
+    return city.gaps_view(data.conn, scenario)
+
+
+@app.get("/city/demand")
+def city_demand(data: DbData = Depends(get_data)) -> dict:
+    """What people looked for and did not find: counts per ~1 km cell and need, shown from DEMAND_K requests."""
+    return city.demand_view(data.conn, live=PULSE.unmet_live())
+
+
+@app.get("/city/data")
+def city_data(data: DbData = Depends(get_data)) -> dict:
+    """Where every answer comes from: sources, freshness, coverage."""
+    return city.data_view(data.conn)
 
 
 @app.get("/whats-on")

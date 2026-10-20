@@ -221,3 +221,73 @@ def stats(conn) -> dict:
                                   " where starts_at between now() and now() + interval '7 days'")["n"],
         "sources": conn.execute("select id, kind, last_run_at, last_status from sources order by id").fetchall(),
     }
+
+
+# ------------------------------------------------------------------ for the city (sql/003_city.sql)
+DEMAND_K = 3   # a cell and need are shown only after this many requests: no single person stands out
+
+
+def record_demand(conn, cell: str, needs: list[str], unmet: list[str], day) -> None:
+    """One request, as counts: the ~1 km cell, the needs understood, which of them no answer covered."""
+    for n in dict.fromkeys(needs):
+        conn.execute(
+            """insert into demand (day, cell, need, asked, unmet) values (%s, %s, %s, 1, %s)
+               on conflict (day, cell, need) do update set asked = demand.asked + 1,
+                                                          unmet = demand.unmet + excluded.unmet""",
+            (day, cell, n, 1 if n in unmet else 0))
+    conn.commit()
+
+
+def demand_summary(conn, days: int = 30, k: int = DEMAND_K) -> list[dict]:
+    """Cells and needs people asked for at least k times in the last days, with how often nothing fit."""
+    return conn.execute(
+        """select cell, need, sum(asked)::int asked, sum(unmet)::int unmet from demand
+           where day > current_date - %s group by cell, need having sum(asked) >= %s
+           order by sum(unmet) desc, sum(asked) desc""",
+        (days, k)).fetchall()
+
+
+def replace_audit(conn, scenario: str, rows: list[dict]) -> None:
+    conn.execute("delete from city_audit where scenario = %s", (scenario,))
+    with conn.cursor() as cur:
+        cur.executemany(
+            """insert into city_audit (scenario, cell, lat, lon, label, places, options, confirmed, nearest_min, best, at)
+               values (%(scenario)s, %(cell)s, %(lat)s, %(lon)s, %(label)s, %(places)s, %(options)s, %(confirmed)s,
+                       %(nearest_min)s, %(best)s, %(at)s)""",
+            [{**r, "scenario": scenario, "best": json.dumps(r["best"], ensure_ascii=False)} for r in rows])
+    conn.commit()
+
+
+def audit(conn, scenario: str) -> list[dict]:
+    return conn.execute(
+        """select cell, lat, lon, label, places, options, confirmed, nearest_min, best, at, run_at from city_audit
+           where scenario = %s order by places desc""", (scenario,)).fetchall()
+
+
+def data_stats(conn) -> dict:
+    """What the assistant stands on: every number on the "Откуда данные" page comes from here."""
+    q = lambda sql, *a: conn.execute(sql, a).fetchone()  # noqa: E731
+    places = q("""select count(*) n, count(*) filter (where hours_valid) with_hours,
+                         count(*) filter (where attrs ? 'opening_hours:source') hours_curated,
+                         count(*) filter (where attrs ? 'wheelchair') with_wheelchair,
+                         count(*) filter (where attrs->>'wheelchair' = 'yes') wheelchair_yes,
+                         count(*) filter (where website is not null or phone is not null) with_contacts,
+                         max(fetched_at) fetched_at from places where category <> 'anchor'""")
+    by_cat = conn.execute(
+        """select category, count(*)::int n, count(*) filter (where hours_valid)::int with_hours,
+                  count(*) filter (where attrs ? 'wheelchair')::int with_wheelchair
+           from places where category <> 'anchor' group by 1 order by 2 desc""").fetchall()
+    events = q("""select count(*) n, count(*) filter (where place_id is not null) with_place,
+                         count(*) filter (where place_id is null and geom is not null) geocoded,
+                         count(*) filter (where evidence_ok) evidence_ok,
+                         count(*) filter (where extraction = 'jsonld') jsonld,
+                         count(*) filter (where extraction = 'llm') llm,
+                         count(*) filter (where extraction = 'telegram') telegram,
+                         max(last_seen_at) last_seen_at from events""")
+    by_source = conn.execute(
+        """select s.id, s.kind, s.title, s.url, s.last_run_at, s.last_status,
+                  (select count(*)::int from events e where e.sources @> jsonb_build_array(jsonb_build_object('source_id', s.id))) events
+           from sources s order by events desc, s.id""").fetchall()
+    sessions = q("""select count(*) n from event_sessions where starts_at between now() and now() + interval '7 days'""")
+    return {"places": places, "places_by_category": by_cat, "events": events, "sources": by_source,
+            "sessions_7d": sessions["n"]}

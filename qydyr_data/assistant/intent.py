@@ -38,14 +38,14 @@ NEED_PATTERNS: dict[str, str] = {
     "unusual": r"необычн|интересн|удиви|что-то новое|нестандартн|unusual|unique|weird|ерекше",
     "night": r"ночн|ночью|\bночи\b|поздно|после полуночи|\bnight\b|\blate\b|түнгі|түнде",
     "nightlife": r"\bбар\b|\bбары\b|\bбаре\b|клуб|вечеринк|туса|nightlife|party|\bbar\b",
-    "free": r"бесплатн|без денег|\bfree\b|тегін",
+    "free": r"бесплатн|без денег|(?<!step-)(?<!step )\bfree\b|тегін",
     "indoor": r"в помещени|внутри|под крышей|погреться|согреться|не мерзнуть|не мёрзнуть|indoor|жылы жер",
-    "accessible": r"коляск|инвалидн|без ступен|маломобил|wheelchair|accessible",
+    "accessible": r"коляск|инвалидн|без ступен|пандус|маломобил|мүгедек|wheelchair|step-?free|accessible",
     "romantic": r"свидани|романтич|романтик|с девушкой|с парнем|\bdate\b|romantic",
     "shopping": r"шопинг|магазин|торгов|shopping",
     "event": r"событи|мероприят|концерт|афиш|спектакл|\bevent|іс-шара|стендап|стенд-ап|stand-?up|квиз|quiz|"
              r"\bшоу\b|фестивал|festival|лекци|мастер-класс|мастер класс|workshop|кинопоказ|киноужин|"
-             r"мюзикл|\bопер[аеуы]\b|балет|\bgig\b|\bshow\b",
+             r"мюзикл|\bопер[аеуы]\b|балет|\bgig\b|\bshow\b|что ид[её]т|что сегодня ид[её]т|what'?s on|не болып жатыр",
 }
 _NEED_RE = {k: re.compile(v, re.I) for k, v in NEED_PATTERNS.items()}
 # "хочу на концерт" is not "any event": the kind narrows what counts (a kids' show is not a concert)
@@ -122,7 +122,7 @@ def parse_budget(text: str) -> tuple[int | None, int | None]:
         return 30, 30
     if re.search(r"полтора час", t):
         return 90, 90
-    if re.search(r"пару час|couple of hours", t):
+    if re.search(r"пар[уыа] час|couple of hours|екі-үш сағат", t):
         return 120, 120
     if re.search(r"\bчас\b|\bчасик|an hour|бір сағат", t):
         return 60, 60
@@ -191,7 +191,7 @@ def parse_rules(text: str) -> Intent:
     if it.lang == "kk" and "nightlife" in it.needs and not re.search(r"клуб|паб|pub|түнгі клуб|сыра", low):
         it.needs.remove("nightlife")
     it.with_kids = "kids" in it.needs
-    if re.search(r"коляск|инвалидн|маломобил|wheelchair", low):
+    if re.search(r"коляск|инвалидн|маломобил|без ступен|пандус|мүгедек|wheelchair|step-?free", low):
         it.wheelchair = True
         if "accessible" not in it.needs:
             it.needs.append("accessible")

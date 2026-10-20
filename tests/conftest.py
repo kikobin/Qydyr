@@ -65,7 +65,7 @@ def db():
     except Exception as e:  # no local Postgres: DB tests are skipped, the rest still runs
         _NO_DB.append(f"no test database ({str(e).splitlines()[0]})")
         pytest.skip(_NO_DB[0])
-    conn.execute("drop table if exists event_sessions, events, place_hours, places, sources cascade")
+    conn.execute("drop table if exists event_sessions, events, place_hours, places, sources, demand, city_audit cascade")
     conn.commit()
     store.init_db(conn)
     yield conn

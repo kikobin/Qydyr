@@ -558,8 +558,12 @@ class Assistant:
         # --- hard needs ---
         if it.with_kids and K.need_match(c, "kids", at=start)[0] == "no":
             return no("kids", "не для детей")
-        if it.wheelchair and K.need_match(c, "accessible", at=start)[0] == "no":
-            return no("wheelchair", "по OpenStreetMap недоступно для колясок")
+        if it.wheelchair:
+            access = K.need_match(c, "accessible", at=start)[0]
+            if access == "no":
+                return no("wheelchair", "по OpenStreetMap недоступно для колясок")
+            if access == "unknown":   # most places: say so rather than send someone to a staircase
+                warnings.append("доступность для колясок не отмечена — уточните, есть ли ступени и лифт")
 
         # --- match the request ---
         cold = weather is not None and weather.outdoor_penalty >= 0.35

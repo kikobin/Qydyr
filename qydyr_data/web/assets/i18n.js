@@ -4,7 +4,7 @@ export const STR = {
     placeholder: "Кофе и тихо, на час…",
     hello: "Сәлем! Подскажу, куда пойти рядом",
     hello_sub: "Учту время, погоду, часы работы и то, что идёт прямо сейчас.",
-    quick: ["Что рядом сейчас", "Кофе и тихо", "С ребёнком", "Ночью", "Погулять час"],
+    quick: ["Что рядом сейчас", "Кофе и тихо", "С ребёнком", "Без ступенек", "Ночью", "Погулять час"],
     surprise: "Удиви меня",
     machine: "Машина времени",
     walks: "Прогулки",
@@ -79,6 +79,8 @@ export const STR = {
     photo_off: "Распознавание фото включается ключом Claude API.",
     friends: "Для компании",
     friends_sub: "Добавьте Qydyr в чат друзей — соберу пожелания и устрою опрос «Куда идём?»",
+    city: "Qydyr для города",
+    city_sub: "Где районам чего не хватает — по реальным данным",
     friends_btn: "Добавить в чат",
     voice_unsupported: "Голосовой ввод не поддерживается в этом браузере.",
     shake: "Встряхните телефон, чтобы получить сюрприз",
@@ -89,7 +91,7 @@ export const STR = {
     placeholder: "Мысалы: тыныш жерде кофе, бір сағатқа…",
     hello: "Сәлем! Жақын жерден қайда бару керегін айтамын",
     hello_sub: "Уақытты, ауа райын, жұмыс кестесін және дәл қазір не өтіп жатқанын ескеремін.",
-    quick: ["Қазір жақын маңда не бар", "Тыныш жерде кофе", "Баламен", "Түнде", "Бір сағат серуен"],
+    quick: ["Қазір жақын маңда не бар", "Тыныш жерде кофе", "Баламен", "Баспалдақсыз", "Түнде", "Бір сағат серуен"],
     surprise: "Таңқалдыр",
     machine: "Уақыт машинасы",
     walks: "Серуендер",
@@ -164,6 +166,8 @@ export const STR = {
     photo_off: "Фотоны тану Claude API кілтімен қосылады.",
     friends: "Достармен",
     friends_sub: "Qydyr-ды достар чатына қосыңыз — тілектерді жинап, «Қайда барамыз?» сауалнамасын жасаймын",
+    city: "Qydyr қала үшін",
+    city_sub: "Аудандарға не жетіспейді — нақты деректер бойынша",
     friends_btn: "Чатқа қосу",
     voice_unsupported: "Бұл браузерде дауыспен енгізу жұмыс істемейді.",
     shake: "Тосын сый алу үшін телефонды сілкіңіз",
@@ -174,7 +178,7 @@ export const STR = {
     placeholder: "Quiet coffee, for an hour…",
     hello: "Hi! I'll tell you where to go nearby",
     hello_sub: "I take into account your time, the weather, opening hours and what is on right now.",
-    quick: ["What's on nearby", "Quiet coffee", "With a kid", "At night", "An hour's walk"],
+    quick: ["What's on nearby", "Quiet coffee", "With a kid", "Step-free", "At night", "An hour's walk"],
     surprise: "Surprise me",
     machine: "Time machine",
     walks: "Walks",
@@ -249,6 +253,8 @@ export const STR = {
     photo_off: "Photo recognition is enabled with a Claude API key.",
     friends: "For friends",
     friends_sub: "Add Qydyr to your friends' chat — I'll collect wishes and run a “Where are we going?” poll",
+    city: "Qydyr for the city",
+    city_sub: "What each district lacks — from real data",
     friends_btn: "Add to a chat",
     voice_unsupported: "Voice input isn't supported in this browser.",
     shake: "Shake the phone for a surprise",
@@ -259,7 +265,7 @@ export const STR = {
 
 // quick intents sent to the API in Russian (the rules understand them best), labels are localized
 export const QUICK_QUERIES = ["что интересного рядом прямо сейчас", "хочу тихое место с кофе", "с ребёнком, где интересно",
-  "что-то ночью, необычное", "хочу прогуляться час"];
+  "я на коляске: куда рядом без ступенек", "что-то ночью, необычное", "хочу прогуляться час"];
 
 export const SPEECH_LANG = { ru: "ru-RU", kk: "kk-KZ", en: "en-US" };
 

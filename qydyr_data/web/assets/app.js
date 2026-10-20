@@ -89,9 +89,9 @@ function renderTop() {
     parts.push(`<button class="chip off" data-act="surprise">${I.dice("i-s")}${esc(S.t.surprise)}</button>`);
   }
   chips.forEach((c, i) => {
-    if (c.key === "wheelchair" && !c.active) return;   // keep the row short; available in the chip menu of "kids"
     const cls = c.kind === "place" ? "" : !c.active ? "off" : c.kind === "need" || c.kind === "filter" ? "on" : "";
     const icon = c.kind === "place" ? I.pin("i-s") : c.kind === "time" ? I.clock("i-s") : c.key === "kids" ? I.kid("i-s")
+      : c.key === "wheelchair" ? I.wheel("i-s")
       : c.key === "only_events" ? I.event("i-s") : c.kind === "deadline" ? I.plane("i-s") : !c.active ? I.plus("i-s") : "";
     parts.push(`<button class="chip ${cls}" data-act="chip" data-i="${i}" aria-haspopup="${c.options.length ? "menu" : "false"}">${icon}${esc(c.label)}${c.assumed ? '<span class="q" aria-label="предположение">?</span>' : ""}</button>`);
   });
@@ -185,6 +185,7 @@ function viewHome() {
       <button class="btn" style="flex:1" data-act="machine">${I.clock()}${esc(t.machine)}</button></div>
     ${S.walks !== undefined && (S.walks === null || S.walks.length) ? `<h3 class="sec">${esc(S.tours && S.tours.length ? W().nearby_walks : t.walks)}</h3>${walks}` : ""}
     ${S.config && S.config.llm ? `<div class="actions"><label class="btn" style="flex:1;cursor:pointer">${I.camera()}${esc(t.photo)}<input id="photo" type="file" accept="image/*" capture="environment" class="sr-only"></label></div>` : ""}
+    <button class="mini" data-act="city">${I.map()}<span style="display:flex;flex-direction:column;gap:2px"><span class="t">${esc(t.city)}</span><span class="meta" style="font-family:var(--font-body)">${esc(t.city_sub)}</span></span>${I.chev("i-s")}</button>
     ${S.config && S.config.bot_username ? `<button class="mini" data-act="friends">${I.people()}<span style="display:flex;flex-direction:column;gap:2px"><span class="t">${esc(t.friends)}</span><span class="meta" style="font-family:var(--font-body)">${esc(t.friends_sub)}</span></span>${I.chev("i-s")}</button>` : ""}
     <div class="actions"><button class="btn" style="flex:1" data-act="saved">${I.bookmark()}${esc(t.saved)}</button>
       <button class="btn" data-act="lang" aria-label="${esc(t.lang)}">${I.globe()}${{ ru: "Рус", kk: "Қаз", en: "Eng" }[S.lang]}</button></div>
@@ -1047,6 +1048,7 @@ function bind() {
       case "resume": if (S.saved) { const sv = S.saved; if (S.tour && S.tour.id === sv.tourId) startWalk({ resume: sv }); else openTour(sv.tourId).then(() => S.tour && startWalk({ resume: sv })); } break;
       case "link": T.openLink(b.dataset.url); break;
       case "friends": T.openLink(`https://t.me/${S.config.bot_username}?startgroup=go`); break;
+      case "city": T.openLink(new URL("city.html", location.href).href); break;
       case "vote": api.feedback(a.id, b.dataset.v).catch(() => {}); toast(S.lang === "ru" ? "Спасибо, учту" : S.lang === "kk" ? "Рақмет" : "Thanks"); break;
       default: break;
     }
