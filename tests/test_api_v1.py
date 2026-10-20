@@ -92,6 +92,30 @@ def test_telegram_init_data(db, sample_places, monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_follow_up_and_the_location_from_the_chat(db, sample_places, monkeypatch):
+    """A next message refines the answer ("а с ребёнком?" keeps the place and the wish); the Mini App
+    gets the location shared with the bot."""
+    from qydyr_data import handoff
+    c = client_for(db, sample_places, monkeypatch)
+    token = "123456:TEST-token"
+    monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", token)
+    try:
+        a = c.post("/ask", json={"text": "хочу кофе", **EXPO, "at": AT}).json()["answer"]
+        b = c.post("/ask", json={"text": "а с ребёнком?", "at": AT, "follow_up": a["id"]}).json()["answer"]
+        assert b["anchor"] is not None and b["anchor"]["label"] == a["anchor"]["label"]
+        assert "coffee" in b["intent"]["needs"] and b["intent"]["with_kids"]
+        lost = c.post("/ask", json={"text": "а с ребёнком?", "at": AT, "follow_up": "nope"}).json()["answer"]
+        assert lost["anchor"] is None                      # an expired answer: asked as is
+        init = sign_init_data({"auth_date": str(int(time.time())), "user": '{"id":77}'}, token)
+        assert c.get("/me/location", headers={"X-Telegram-Init-Data": init}).json() == {"found": False}
+        handoff.remember(77, 51.0901, 71.4166)
+        got = c.get("/me/location", headers={"X-Telegram-Init-Data": init}).json()
+        assert got["found"] and abs(got["lat"] - 51.09) < 0.01
+        assert c.get("/me/location").json() == {"found": False}   # no Telegram user: nothing to give
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_translate_answer_fields():
     calls = []
 

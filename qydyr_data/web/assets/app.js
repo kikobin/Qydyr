@@ -40,7 +40,7 @@ function toast(text, ms = 2600) {
 
 function setSheet(state) {
   S.sheet = state;
-  const peek = { low: "24vh", half: "48vh", full: "88vh" }[state];
+  const peek = `calc(var(--app-h) * ${{ low: 0.24, half: 0.48, full: 0.88 }[state]})`;   // of what Telegram shows
   $("#sheet").style.setProperty("--peek", peek);
 }
 
@@ -121,10 +121,29 @@ const CAT_ICON = { culture: "museum", food: "cafe", park: "park", landmark: "lan
 const TOUR_ART = { nurzhol: "esil-evening.svg", botanical: "river-park.webp", independence: "monument.webp", expo: "museum.webp" };
 const QUICK_ICON = [I.pin, I.coffee, I.kid, I.wheel, I.moon, I.walk];
 const U = () => UI[S.lang];
+// the tab bar: four sections; the screens inside a section keep its tab lit
+const TABS = ["home", "results", "tours", "saved"];
+const SECTION = { home: "home", results: "results", whynot: "results", place: "results", machine: "results",
+  tours: "tours", tour: "tours", saved: "saved" };
 const catOf = (x) => (x && (x.kind === "event" ? "event" : x.category)) || "other";
 const spot = (cat, cls = "spot") => `<img class="${cls}" src="${ART}${SPOT[cat] || "river-park"}.webp" alt="" loading="lazy" decoding="async">`;
 const catIcon = (cat) => `<img class="cat" src="${ART}cat-${CAT_ICON[cat] || "landmark"}.svg" alt="" aria-hidden="true">`;
 const deg = (t) => `${t > 0 ? "+" : t < 0 ? "−" : ""}${Math.abs(t)}°`;
+
+function renderTabs() {
+  const sec = SECTION[S.view], on = !!sec;            // a walk in progress and its finish keep the whole screen
+  const nav = $("#tabbar");
+  nav.hidden = !on;
+  $("#app").classList.toggle("tabs", on);
+  if (!on) return;
+  const ic = { home: I.home, results: I.map, tours: I.walk, saved: I.bookmark };
+  const badge = {   // what is waiting there: the picks, a walk to go on with, the saved places
+    results: S.answer && S.answer.items.length && sec !== "results" ? S.answer.items.length : 0,
+    tours: S.saved && S.saved.visited && S.saved.visited.length ? "dot" : 0,
+    saved: S.favs.length,
+  };
+  nav.innerHTML = TABS.map((k) => `<button class="tab ${k === sec ? "on" : ""}" data-act="tab" data-tab="${k}"${k === sec ? ' aria-current="page"' : ""}>${ic[k]()}<span>${esc(U().tabs[k])}</span>${badge[k] === "dot" ? '<i class="n dot"></i>' : badge[k] ? `<i class="n">${badge[k]}</i>` : ""}</button>`).join("");
+}
 
 function renderSheet() {
   const v = S.view;
@@ -142,6 +161,7 @@ function renderSheet() {
   else if (v === "walkdone") html = viewWalkDone();
   document.body.dataset.view = v;
   $("#sheet .body").innerHTML = html;
+  renderTabs();
   if (v === "machine") bindMachine();
 }
 
@@ -237,7 +257,6 @@ function viewHome() {
       <button class="tile" data-act="machine">${I.clock()}<strong>${esc(t.machine)}</strong><span>${esc(u.machine_sub)}</span></button></div>
     ${tours}
     ${invite}
-    <button class="row-card" data-act="saved"><span class="icon-tile">${I.bookmark()}</span><span class="grow"><strong>${esc(u.tabs.saved)}</strong><span class="small muted">${esc(S.favs.length ? u.saved_count(S.favs.length) : t.saved_empty)}</span></span>${I.chev("i-s")}</button>
     <button class="row-card" data-act="city"><span class="icon-tile">${I.map()}</span><span class="grow"><strong>${esc(t.city)}</strong><span class="small muted">${esc(t.city_sub)}</span></span>${I.chev("i-s")}</button>
     <div class="foot"><button class="lang-btn" data-act="lang">${esc(u.lang_label)}: <b>${esc(u.lang_name[S.lang])}</b>${I.globe("i-xs")}</button>
       <p class="privacy">${I.lock("i-xs")}${esc(t.privacy)}</p></div>`;
@@ -294,6 +313,11 @@ function viewResults() {
   const sim = a.context && a.context.simulated;
   const notes = (a.notes || []).filter((x) => !x.startsWith("Симуляция"));
   const r = a.route;
+  if (!a.anchor) {   // not "nothing fits": we don't know where you are yet
+    return `<div class="empty">${mascot("map", { size: 130, title: MASCOT_NAME[S.lang] })}<h1>${esc(u.where_title)}</h1><p class="muted">${esc(u.where_text)}</p></div>
+      <button class="btn primary full" data-act="locate">${I.pin("i-s")}${esc(u.share_geo)}</button>
+      <button class="btn secondary full" data-act="focus-search">${esc(u.type_place)}</button>`;
+  }
   if (!n) {
     return `${S.stack.length ? head("", { backBtn: true }) : ""}
       <div class="empty">${mascot("shrug", { size: 130, title: MASCOT_NAME[S.lang] })}<h1>${esc(u.nothing_title)}</h1><p class="muted">${esc(notes[0] || t.nothing)}</p></div>
@@ -397,7 +421,7 @@ function viewMachine() {
 
 function viewSaved() {
   const t = S.t, u = U();
-  return `${head(u.tabs.saved, { backBtn: true })}
+  return `${head(u.tabs.saved, { backBtn: S.stack.length > 0 })}
     ${S.favs.length ? `<p class="muted small" style="margin-top:-10px">${esc(u.saved_count(S.favs.length))}</p>
       <div class="list">${S.favs.map((f, i) => `<article class="saved-row">${spot(f.category || "other")}<button class="saved-open" data-act="fav-open" data-i="${i}"><strong>${esc(f.title)}</strong>
         <span class="status">${esc(cap(catLabel(f.category || "other")))}</span></button><button class="bookmark-btn" data-act="fav-del" data-i="${i}" aria-label="${esc(t.unsave)}">${I.bookmark()}</button></article>`).join("")}</div>`
@@ -409,7 +433,7 @@ function viewTours() {
   const w = W();
   const tours = S.tours === null ? `<div class="skeleton"></div><div class="skeleton"></div>` : (S.tours || []).map((c) => tourCard(c, true)).join("");
   const near = S.walks && S.walks.length ? `<section><div class="section-head"><h2>${esc(w.nearby_walks)}</h2></div><div class="list">${S.walks.map(walkRow).join("")}</div></section>` : "";
-  return `${head(w.tours, { backBtn: true })}<div class="list">${tours}</div>${near}`;
+  return `${head(w.tours, { backBtn: S.stack.length > 0 })}<div class="list">${tours}</div>${near}`;
 }
 
 // ---------------------------------------------------------------- guided walks
@@ -774,6 +798,7 @@ function show(answer, { view } = {}) {
   S.loading = false;
   renderTop();
   if (view) go(view); else if (S.view !== "machine") { if (S.view !== "results") go("results"); else renderSheet(); } else renderSheet();
+  if (!answer.anchor && S.sheet !== "full") setSheet("full");   // "Где вы?": the buttons, not the empty map
   map && map.show(answer, 0, { labels: { you: S.t.you_here } });
   fx && fx.set((answer.context && answer.context.simulated) ? S.preset : null);
 }
@@ -983,6 +1008,9 @@ function bindMachine() {
 
 async function locate(explicit = false) {
   let p = await T.getLocation(explicit ? 12000 : 8000);
+  if (!p) {   // Telegram's webview often has no geolocation: take the one shared with the bot in the chat
+    try { const r = await api.myLocation(); if (r.found) { p = { lat: r.lat, lon: r.lon }; toast(U().loc_from_chat, 3200); } } catch (_) { /* not in Telegram */ }
+  }
   if (p && !inAstana(p.lat, p.lon)) { toast(S.t.not_astana, 5200); p = null; explicit = false; }
   if (p) {
     S.loc = { lat: T.roundCoord(p.lat), lon: T.roundCoord(p.lon) };
@@ -1130,10 +1158,14 @@ function bind() {
       case "fav-del": S.favs.splice(i, 1); T.store.set("favs", JSON.stringify(S.favs)); T.haptic.tap(); renderSheet(); break;
       case "search-more": S.overrides = merge(S.overrides, { budget_min: 60, budget_max: 90 }); ask(); break;
       case "focus-search": $("#q").focus(); break;
-      case "tab": {   // "Все прогулки", "Найти места": a section of the app, with a way back
+      case "tab": {   // a section, not a step: the stack starts over
         const v = b.dataset.tab;
-        if (v === "results" && !S.answer) { S.query = QUICK_QUERIES[0]; $("#q").value = S.t.quick[0]; S.overrides = {}; ask(); break; }
-        go(v);
+        T.haptic.tap();
+        if (SECTION[S.view] === v && v !== "tours") { $("#sheet .body").scrollTo({ top: 0, behavior: "smooth" }); if (S.view !== v) { S.stack = []; go(v, false); } break; }
+        if (v === "tours" && S.walk) { go("walk", false); break; }   // a walk in progress: back to it
+        S.stack = [];
+        if (v === "results" && !S.answer) { S.query = QUICK_QUERIES[0]; $("#q").value = S.t.quick[0]; S.overrides = {}; S.view = "home"; ask(); break; }
+        go(v, false);
         break;
       }
       default: break;
@@ -1142,6 +1174,9 @@ function bind() {
   document.addEventListener("submit", (e) => {
     if (e.target.matches("[data-act=qa-form]")) { e.preventDefault(); const inp = $("#qa"); askPlace(inp.value); inp.value = ""; }
   });
+  // the keyboard is up while typing: hide the tab bar so it doesn't ride on it
+  document.addEventListener("focusin", (e) => { if (e.target.matches("input[type=text]")) document.body.classList.add("typing"); });
+  document.addEventListener("focusout", (e) => { if (e.target.matches("input[type=text]")) document.body.classList.remove("typing"); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !closeMenu()) back(); });
 
   // the sheet: drag the handle between low / half / full
@@ -1150,13 +1185,14 @@ function bind() {
   grab.addEventListener("pointerdown", (e) => { y0 = e.clientY; h0 = sheet.getBoundingClientRect().top; sheet.classList.add("dragging"); grab.setPointerCapture(e.pointerId); });
   grab.addEventListener("pointermove", (e) => {
     if (y0 == null) return;
-    const top = Math.max(window.innerHeight * 0.12, Math.min(window.innerHeight * 0.8, h0 + (e.clientY - y0)));
-    sheet.style.setProperty("--peek", `${window.innerHeight - top}px`);
+    const H = $("#app").clientHeight;
+    const top = Math.max(H * 0.12, Math.min(H * 0.8, h0 + (e.clientY - y0)));
+    sheet.style.setProperty("--peek", `${H - top}px`);
   });
   grab.addEventListener("pointerup", (e) => {
     sheet.classList.remove("dragging");
     const moved = Math.abs(e.clientY - y0);
-    const frac = 1 - sheet.getBoundingClientRect().top / window.innerHeight;
+    const frac = 1 - sheet.getBoundingClientRect().top / $("#app").clientHeight;
     y0 = null;
     if (moved < 6) { setSheet(S.sheet === "full" ? "half" : "full"); return; }
     setSheet(frac > 0.66 ? "full" : frac > 0.34 ? "half" : "low");
@@ -1168,13 +1204,12 @@ async function start() {
   const saved = await T.store.get("lang");
   if (saved && STR[saved]) { S.lang = saved; S.t = STR[saved]; document.documentElement.lang = saved; }
   try { S.favs = JSON.parse((await T.store.get("favs")) || "[]"); } catch (_) { S.favs = []; }
-  S.theme = T.telegramTheme();
+  S.theme = "light";   // the warm paper reads best, also in Telegram's dark mode
   document.documentElement.dataset.theme = S.theme;
   $("#logo").innerHTML = I.search();
   $("#mic").innerHTML = I.mic();
   $("#go").innerHTML = I.send();
   T.initTelegram({ onBack: back, theme: S.theme });
-  if (T.tg) T.tg.onEvent && T.tg.onEvent("themeChanged", () => applyTheme(T.telegramTheme()));
   setSheet("full");
   renderTop();
   renderSheet();

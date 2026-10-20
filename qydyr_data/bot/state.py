@@ -1,5 +1,5 @@
 """In-memory state of the bot: private sessions and group gatherings. Nothing is written to disk;
-locations are kept rounded (~150 m) and expire after 30 minutes."""
+locations are kept rounded (~150 m) until the next one (a day at most)."""
 from __future__ import annotations
 
 import secrets
@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 
 from .texts import user_lang
 
-LOC_TTL_S = 30 * 60
+LOC_TTL_S = 24 * 3600   # the last location stands until a new one (a day at most; in memory, ~150 m)
 PENDING_TTL_S = 10 * 60             # a request waiting for a location is forgotten after this
 GATHERING_TTL_S = 6 * 3600
+CONTEXT_TTL_S = 30 * 60             # a message within this of the last answer refines it ("а подешевле?")
 
 
 def coarse(lat: float, lon: float) -> tuple[float, float]:
@@ -28,6 +29,8 @@ class Session:
     pending_at: float = 0.0
     walk: "Walk | None" = None          # a guided walk in progress
     gen_tours: dict[str, dict] = field(default_factory=dict)   # themed walks from the last /walks, as tours
+    last_answer: str | None = None      # the answer a next message follows up on
+    last_answer_at: float = 0.0
 
     def location(self) -> tuple[float, float] | None:
         if self.lat is None or time.time() - self.loc_at > LOC_TTL_S:
@@ -44,6 +47,14 @@ class Session:
 
     def loc_age_min(self) -> int:
         return int((time.time() - self.loc_at) // 60)
+
+    def context(self) -> str | None:
+        if self.last_answer and time.time() - self.last_answer_at <= CONTEXT_TTL_S:
+            return self.last_answer
+        return None
+
+    def set_context(self, answer_id: str | None) -> None:
+        self.last_answer, self.last_answer_at = answer_id, time.time()
 
     def set_pending(self, text: str | None) -> None:
         self.pending, self.pending_at = text, time.time()

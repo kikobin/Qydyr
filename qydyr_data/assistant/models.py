@@ -35,6 +35,9 @@ class Intent(BaseModel):
     persona: Optional[Literal["local", "tourist", "student", "family"]] = None
     needs: list[Need] = Field(default_factory=list)
     event_kinds: list[str] = Field(default_factory=list)  # "концерт" -> ["concert"]: which events count
+    place_kinds: list[str] = Field(default_factory=list)  # "библиотека" -> ["library"]: only that kind of place
+    avoid: list[Need] = Field(default_factory=list)       # "не хочу кофе", "без кафе": never these
+    avoid_kinds: list[str] = Field(default_factory=list)  # "только не торговый центр": never this kind of place
     want_route: bool = False
     only_events: bool = False                   # "только события" switch
     assumptions: list[str] = Field(default_factory=list)  # shown to the person as editable chips

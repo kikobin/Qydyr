@@ -26,7 +26,7 @@ from aiogram.types import (BotCommand, BotCommandScopeAllGroupChats, BotCommandS
                            LinkPreviewOptions, MenuButtonWebApp, Message, PollAnswer, ReplyKeyboardMarkup, WebAppInfo,
                            ChatMemberUpdated)
 
-from .. import settings
+from .. import handoff, settings
 from ..assistant import travel
 from .backend import Backend, make_backend
 from .fmt import (answer_html, answer_keyboard, chip_keyboard, hm, in_astana, item_html, markup, meters, poll_options,
@@ -101,9 +101,11 @@ class QydyrBot:
 
     # ------------------------------------------------------------- answers
     async def send_answer(self, m: Message, text: str, lang: str, *, lat=None, lon=None, surprise=False,
-                          private: bool = True, gps_age: int | None = None) -> dict | None:
+                          private: bool = True, gps_age: int | None = None, follow_up: str | None = None) -> dict | None:
         await m.bot.send_chat_action(m.chat.id, ChatAction.TYPING)
         body = {"text": text[:MAX_TEXT], "lang": lang, "format": "structured", "surprise": surprise}
+        if follow_up:
+            body["follow_up"] = follow_up
         if lat is not None:
             body.update(lat=lat, lon=lon)
         try:
@@ -124,7 +126,10 @@ class QydyrBot:
         s.pending = None                 # a new request replaces the one that waited for a location
         loc = s.location()
         ans = await self.send_answer(m, text, s.lang, lat=loc[0] if loc else None, lon=loc[1] if loc else None,
-                                     surprise=surprise, gps_age=s.loc_age_min() if loc else None)
+                                     surprise=surprise, gps_age=s.loc_age_min() if loc else None,
+                                     follow_up=None if surprise else s.context())
+        if ans is not None and ans.get("anchor") is not None:
+            s.set_context(ans["id"])     # the next message builds on this one: "а подешевле?", "без кофе"
         if ans is not None and ans.get("anchor") is None:
             s.set_pending(text)
             await m.answer(t(s.lang, "need_place"), reply_markup=self.reply_kb(s.lang))
@@ -140,8 +145,8 @@ class QydyrBot:
             s = self.sess(m.from_user)
             if not s.lang_set:
                 s.lang = user_lang(m.from_user.language_code)
-            s.clear_location()           # a fresh start: no point from half an hour ago
             s.pending = None
+            s.set_context(None)
             await self.sticker(m.bot, m.chat.id, "hello")
             await m.answer(t(s.lang, "hello"), reply_markup=self.reply_kb(s.lang))
             arg = (command.args or "").strip()
@@ -198,6 +203,9 @@ class QydyrBot:
             lat, lon = m.location.latitude, m.location.longitude
             if in_astana(lat, lon):
                 s.set_location(lat, lon)
+                handoff.remember(m.from_user.id, s.lat, s.lon)   # the Mini App opened from here knows it too
+            else:
+                s.clear_location()       # a point outside the city is newer than the old one inside it
             if s.walk is not None:
                 await self.walk_location(m, force=True)
                 return
@@ -208,8 +216,9 @@ class QydyrBot:
             if pending == "/walks":
                 await self.send_walks(m, s, s.location())
                 return
-            await self.send_answer(m, pending or "что интересного рядом прямо сейчас", s.lang, lat=s.lat, lon=s.lon,
-                                   surprise=pending == SURPRISE_TEXT, gps_age=0)
+            ans = await self.send_answer(m, pending or "что интересного рядом прямо сейчас", s.lang, lat=s.lat,
+                                         lon=s.lon, surprise=pending == SURPRISE_TEXT, gps_age=0)
+            s.set_context(ans["id"] if ans and ans.get("anchor") else None)   # a new point: a fresh start there
 
         @r.edited_message(F.location, private)
         async def live_location(m: Message) -> None:
@@ -380,6 +389,8 @@ class QydyrBot:
                 await c.message.answer(t(lang, "expired"))
                 return
             new = res["answer"]
+            if private_chat:
+                self.sess(c.from_user).set_context(new["id"])
             await self.edit(c.message.edit_text(answer_html(new, lang), reply_markup=self.kb(new, lang, private_chat),
                                                 link_preview_options=NO_PREVIEW))
 

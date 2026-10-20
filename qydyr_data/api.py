@@ -36,11 +36,11 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from . import city, settings, store
+from . import city, handoff, settings, store
 from .assistant import placeqa
 from .assistant import tours as TOURS
 from .assistant.mascot import weather_view
-from .assistant.models import Anchor, Overrides
+from .assistant.models import Anchor, Intent, Overrides
 from .assistant.privacy import geohash
 from .assistant.recommend import Assistant, DbData
 from .assistant.render import render, render_why_not
@@ -112,6 +112,7 @@ async def telegram_init_data(request: Request, call_next):
         if fields is None:
             return JSONResponse({"detail": "invalid Telegram initData"}, status_code=401)
         user = (fields.get("user") or {}).get("id") if isinstance(fields.get("user"), dict) else None
+    request.state.tg_user = user
     is_bot = bool(settings.TELEGRAM_BOT_TOKEN) and hmac.compare_digest(
         request.headers.get("x-qydyr-bot", ""), bot_key(settings.TELEGRAM_BOT_TOKEN))
     if settings.ANTHROPIC_API_KEY and _costly(request) and not is_bot:   # the bot is one trusted client
@@ -202,6 +203,7 @@ class AskIn(BaseModel):
     lang: Literal["ru", "kk", "en"] | None = None        # language of the interface / the answer
     format: Literal["full", "structured", "text"] = "full"
     llm: bool = True                                     # let Claude help understand the request
+    follow_up: str | None = Field(None, max_length=32)   # id of the answer this text refines ("а подешевле?")
 
 
 class PatchIn(BaseModel):
@@ -262,9 +264,11 @@ def _run(body: AskIn, data: DbData, record: bool = True) -> dict:
         body.lat, body.lon = round(body.lat, 3), round(body.lon, 3)
     text = body.text.strip() or ("удиви меня" if body.surprise else "что интересного рядом")
     assistant = Assistant(data, llm=_llm_intent() if body.llm else None, places=_places(data), geocode=_geocoder())
+    context, context_anchor = _context(body.follow_up)
     ans = assistant.ask(text, at=_local(body.at), lat=body.lat, lon=body.lon, members=body.members,
                         overrides=body.overrides, weather_preset=body.weather_preset, surprise=body.surprise,
-                        seed=body.seed, anchor=body.anchor.model_copy() if body.anchor else None, **_demo_kw())
+                        seed=body.seed, anchor=body.anchor.model_copy() if body.anchor else None,
+                        context=context, context_anchor=context_anchor, **_demo_kw())
     if ans.anchor is not None and record:   # a chip edit re-runs the same request: it is not a new person asking
         needs, unmet = city.unmet_needs(ans.intent, ans.items)
         PULSE.record(ans.anchor.lat, ans.anchor.lon, list(ans.intent.needs), ans.intent.lang, len(ans.items),
@@ -298,7 +302,7 @@ def _run(body: AskIn, data: DbData, record: bool = True) -> dict:
         out["answer"] = dump
         if out["translated"] or ans.narrated:
             out["lang"] = lang
-        _remember(body, ans, dump)
+        _remember(body, ans, dump, assistant.understood)
         return out
     if narrator is not None:
         narrator(ans, assistant.picked)
@@ -314,15 +318,35 @@ def _run(body: AskIn, data: DbData, record: bool = True) -> dict:
         out["answer"] = dump
     if lang != "ru" and (out["translated"] or "text" in out and out["text"] != render(ans)):
         out["lang"] = lang
-    _remember(body, ans, dump)
+    _remember(body, ans, dump, assistant.understood)
     return out
 
 
-def _remember(body: AskIn, ans, dump: dict) -> None:
+def _context(answer_id: str | None) -> tuple[Intent | None, Anchor | None]:
+    """The request an answer was given to and where, for a follow-up text. Expired or unknown: none."""
+    prev = ANSWERS.get(answer_id) if answer_id else None
+    if not prev or not prev.get("intent"):
+        return None, None
+    anchor = prev["answer"].get("anchor")
+    return Intent.model_validate(prev["intent"]), Anchor.model_validate(anchor) if anchor else None
+
+
+def _remember(body: AskIn, ans, dump: dict, understood: Intent | None = None) -> None:
     req = body.model_dump(mode="json")
     if ans.anchor is not None and ans.anchor.source == "gps":  # keep only the coarse cell, never exact GPS
         req["lat"], req["lon"] = ans.anchor.lat, ans.anchor.lon
-    ANSWERS.put(ans.id, {"request": req, "answer": dump})
+    got = {"request": req, "answer": dump}
+    if understood is not None:
+        got["intent"] = understood.model_dump(mode="json", exclude={"lat", "lon"})
+    ANSWERS.put(ans.id, got)
+
+
+@app.get("/me/location")
+def my_location(request: Request) -> dict:
+    """The last location this Telegram user shared with the bot (coarse, from memory):
+    the Mini App falls back to it when the webview has no geolocation. Needs signed initData."""
+    loc = handoff.recall(getattr(request.state, "tg_user", None))
+    return {"found": False} if loc is None else {"found": True, "lat": loc[0], "lon": loc[1]}
 
 
 @app.post("/ask")

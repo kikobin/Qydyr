@@ -35,6 +35,7 @@ export const api = {
   tourStory: (id, stop, lang) => call("GET", `/tours/${encodeURIComponent(id)}/stops/${encodeURIComponent(stop)}/story?lang=${lang}`),
   nudges: (q) => call("GET", `/walk/nudges?${new URLSearchParams(q)}`),
   weather: (q) => call("GET", `/weather?${new URLSearchParams(q)}`),
+  myLocation: () => call("GET", "/me/location"),
   whereami: async (file, lang) => {
     const fd = new FormData();
     fd.append("photo", file);

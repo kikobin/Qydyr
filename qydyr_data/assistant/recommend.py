@@ -25,8 +25,9 @@ from . import knowledge as K
 from . import travel
 from . import weather as W
 from .group import Member, combine, group_detail, group_score, parse_members
-from .intent import (ASSUME_FLIGHT, ASSUME_STROLL, ASSUME_TIME, ASSUME_WALK, ClaudeIntentParser, apply_defaults,
-                     apply_overrides, event_kind_fits, understand)
+from .intent import (ASSUME_FLIGHT, ASSUME_STROLL, ASSUME_TIME, ASSUME_WALK, PLACE_KIND_LABEL, ClaudeIntentParser,
+                     FRESH, anchor_candidates, apply_defaults,
+                     apply_overrides, event_kind_fits, follow_up, understand)
 from .locate import Locator, key_set
 from .models import (AirInfo, Anchor, Answer, Chip, ChipOption, Comfort, Context, FunnelStep, Intent, Item,
                      Overrides, Rejected, WeatherInfo)
@@ -159,6 +160,7 @@ class Assistant:
         self.geocode = geocode      # typed addresses -> a start point (places/dgis.Geocoder), None: places only
         self.narrator = narrator    # RAG generation: Claude words the picked places' facts (assistant/narrate.py)
         self.picked: list[Scored] = []  # the last answer's picks with their facts, for a narrator called later
+        self.understood: Intent | None = None   # the last request before defaults: a follow-up builds on it
         self.locator = Locator.of(places) if places is not None else Locator(data.places_lite())
 
     # ------------------------------------------------------------------ public
@@ -166,10 +168,22 @@ class Assistant:
             weather: W.Weather | None = None, weather_file=None, fetch_weather: bool = True,
             members: list[str] | None = None, overrides: Overrides | None = None,
             weather_preset: str | None = None, air: A.Air | None = None, air_file=None,
-            surprise: bool = False, seed: int | None = None, anchor: Anchor | None = None) -> Answer:
+            surprise: bool = False, seed: int | None = None, anchor: Anchor | None = None,
+            context: Intent | None = None, context_anchor: Anchor | None = None) -> Answer:
+        """context / context_anchor: the previous request and where it was, when this text follows it up
+        ("а подешевле", "без кофе", "а вечером?"): what the new words do not say is kept."""
         at = (at or datetime.now(settings.TZ)).astimezone(settings.TZ)
         group = parse_members(members) if members else []
         intent = understand(text, lat=lat, lon=lon, llm=self.llm, defaults=False)
+        if context is not None and FRESH.search(text):
+            context = context_anchor = None
+        if context is not None:
+            said_place = bool(anchor_candidates(text) or intent.anchor_text)
+            intent = follow_up(context, intent)
+            if not said_place and context_anchor is not None and anchor is None:
+                anchor = context_anchor       # "а подешевле?" is still about the place said before
+                intent.anchor_text = None
+        self.understood = intent.model_copy(deep=True)
         if intent.start_time:  # "вечером", "завтра в 11:00", "в субботу": answer for that moment, if it is still ahead
             days = intent.start_days
             if intent.start_weekday is not None:
@@ -262,6 +276,22 @@ class Assistant:
                 ans.notes.append("Пешком рядом ничего подходящего — вот что есть на такси.")
             else:
                 intent.mode = "walk"
+        if not picked and intent.place_kinds and not group and airport is None and "budget" not in explicit:
+            # "хочу на каток" and the nearest rink is across the river: show it, by taxi, with more time
+            # than the hour we guessed, rather than nothing
+            wider = max(budget_hi, 150)
+            was = intent.mode, intent.budget_min, intent.budget_max
+            intent.mode, intent.budget_min, intent.budget_max = "taxi", 60, wider
+            far = self._candidates(intent, anchor, at, at + timedelta(minutes=wider), wider, weather, airport, group, buffer)
+            if (far_picked := self._pick(far[0])):
+                scored, rejects, radius, speed = far
+                picked = far_picked
+                budget_hi, end = wider, at + timedelta(minutes=wider)
+                intent.assumptions = [a for a in intent.assumptions if a not in (ASSUME_WALK, ASSUME_TIME)]
+                ans.chips = self._chips(intent, anchor, buffer)
+                ans.notes.append(f"Ближайшее «{PLACE_KIND_LABEL[intent.place_kinds[0]]}» не рядом — вот что есть на такси.")
+            else:
+                intent.mode, intent.budget_min, intent.budget_max = was
         if not picked:
             ans.notes.append("Рядом не нашлось подходящего с учётом времени, часов работы и погоды. "
                              "Попробуйте увеличить время или поехать на такси.")
@@ -325,6 +355,11 @@ class Assistant:
                 continue
             chips.append(Chip(key=f"need:{n}", label=K.NEED_LABELS[n], kind="need", assumed=stroll,
                               options=[ChipOption(label="убрать", patch={"remove_needs": [n]})]))
+        if it.avoid or it.avoid_kinds:
+            gone = [K.NEED_LABELS[n] for n in it.avoid] + [PLACE_KIND_LABEL.get(k, k) for k in it.avoid_kinds]
+            chips.append(Chip(key="avoid", label="без: " + ", ".join(gone), kind="filter"))
+        if it.place_kinds:
+            chips.append(Chip(key="place_kind", label=PLACE_KIND_LABEL[it.place_kinds[0]], kind="filter"))
         chips.append(Chip(key="only_events", label="только события", kind="filter", active=it.only_events,
                           options=[ChipOption(label="все места" if it.only_events else "только события",
                                               patch={"only_events": not it.only_events})]))
@@ -360,7 +395,10 @@ class Assistant:
         look = radius * 1.6  # a bit further, to be able to say "this one is too far"
 
         cands: dict[str, K.Cand] = {}
-        rows = self.data.places_near(anchor.lat, anchor.lon, look, at, 500)
+        if it.place_kinds:   # only that kind can answer: look through all of them, not the 500 nearest of anything
+            rows = [r for r in self.data.places_near(anchor.lat, anchor.lon, look, at, 5000) if r["subcategory"] in it.place_kinds]
+        else:
+            rows = self.data.places_near(anchor.lat, anchor.lon, look, at, 500)
         closed_malls = [r for r in rows if r["subcategory"] == "mall" and r["open_state"] == "closed"]
         for r in rows:
             if r["category"] == "anchor":  # a university or an airport is where you are, not where to go
@@ -444,6 +482,14 @@ class Assistant:
 
         def no(code: str, reason: str) -> Reject:
             return Reject(cand=c, code=code, reason=reason, walk=walk, distance_m=dist)
+
+        if it.place_kinds and (c.kind != "place" or c.subcategory not in it.place_kinds):
+            return no("fit", f"не {PLACE_KIND_LABEL[it.place_kinds[0]]}")   # "библиотека" asked: a café is not one
+        if it.avoid_kinds and c.subcategory in it.avoid_kinds:
+            return no("fit", f"вы просили без: {PLACE_KIND_LABEL.get(c.subcategory, c.subcategory)}")
+        for n in it.avoid:   # "не хочу кофе": a café is out, whatever else it offers
+            if K.need_match(c, n, at=at)[0] == "yes":
+                return no("fit", f"вы просили без: {K.NEED_LABELS[n]}")
 
         if dist > radius or walk > budget * 0.6:
             if cold_cap and weather is not None and walk <= budget * 0.6:
@@ -582,6 +628,8 @@ class Assistant:
                 tot += w * K.WEIGHT[hits[n][0]]
                 wsum += w
             need_score = tot / wsum if wsum else 0.5
+        if it.place_kinds:   # "кинотеатр" asked and this is one: the kind is the match, the rest only ranks them
+            need_score = max(need_score, 0.8)
 
         # --- what is on there ---
         ev_bonus = 0.0
@@ -615,7 +663,7 @@ class Assistant:
             penalty += 0.25
         # the first thing asked for matters most: "кофе и розетка" -> a museum is not an answer,
         # unless something else asked for is clearly there
-        explicit = not any(a.startswith("просто погулять") for a in it.assumptions)
+        explicit = not any(a.startswith("просто погулять") for a in it.assumptions) and not it.place_kinds
         if (explicit and it.needs and hits[it.needs[0]][0] in ("unknown", "no") and ev_bonus < 0.1
                 and not any(v[0] == "yes" for v in hits.values())):
             penalty += 0.2

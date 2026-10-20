@@ -215,7 +215,7 @@ def test_gps_header_start_reset_and_outside_astana(env):
     feed(env, message=msg(location=Location(latitude=51.0900, longitude=71.4165)))
     assert texts(env)[-1].startswith("<b>ваша геолокация</b> · ")
     feed(env, message=msg("/start"))
-    assert s.location() is None
+    assert s.location() is not None      # the last point stands until a new one, /start or not
     feed(env, message=msg(location=Location(latitude=43.238, longitude=76.945)))   # Almaty
     assert "знаю только Астану" in texts(env)[-1] and s.location() is None
 

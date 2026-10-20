@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 NEED_PATTERNS: dict[str, str] = {
     "coffee": r"кофе|кофейн|капучино|латте|раф\b|coffee|кофе ішу|кофе ішетін",
-    "food": r"поесть|покушать|пообедать|поужинать|позавтракать|перекус|еда\b|ресторан|ланч|\bобед|\bужин|"
+    "food": r"поесть|покушать|пообедать|поужинать|позавтракать|перекус|еда\b|ресторан|ланч|\bобед|\bужин|\bкафе|кафешк|\bcafe|"
             r"\bfood\b|\beat\b|lunch|dinner|тамақ",
     "socket": r"розетк|зарядит|подзаряд|ноутбук|ноуте?\b|макбук|laptop|socket|outlet|charge",
     "wifi": r"wi-?fi|вай-?фай|интернет",
@@ -182,10 +182,77 @@ def parse_start(low: str) -> tuple[time | None, int]:
     return (time(12, 0) if days else None), days
 
 
+# a kind of place named outright ("библиотека", "хочу на каток"): only those places answer it,
+# never a café "для прогулки" in its stead. (subcategories, as the request names them)
+PLACE_KINDS: list[tuple[str, list[str], str]] = [
+    (r"библиотек|кітапхана|\blibrar", ["library"], "библиотека"),
+    (r"кинотеатр|\bкино\b|\bcinema|\bmovie", ["cinema"], "кинотеатр"),
+    (r"(?<!кино)театр|\btheat(?:re|er)", ["theatre"], "театр"),
+    (r"галере|\bgaller", ["gallery", "arts_centre"], "галерея"),
+    (r"\bкат(?:ок|ке|ка)\b|покататься на коньках|мұз айдын|ice rink|skating", ["ice_rink"], "каток"),
+    (r"боулинг|bowling", ["bowling"], "боулинг"),
+    (r"квест|escape room", ["escape_game"], "квест"),
+    (r"\bvr\b|виар|виртуальн", ["vr"], "VR"),
+    (r"батут|trampoline", ["trampoline_park"], "батуты"),
+    (r"караоке|karaoke", ["karaoke"], "караоке"),
+    (r"коворкинг|coworking", ["coworking"], "коворкинг"),
+    (r"антикафе|anticafe", ["anticafe"], "антикафе"),
+    (r"\bтрц\b|\bтц\b|торгов\w* центр|\bмолл|\bmall\b|сауда орталығы", ["mall"], "торговый центр"),
+    (r"зоопарк|\bzoo\b|хайуанаттар", ["zoo"], "зоопарк"),
+    (r"океанариум|аквариум|aquarium", ["aquarium"], "океанариум"),
+    (r"аквапарк|water ?park", ["water_park"], "аквапарк"),
+    (r"бассейн|\bswimming|\bpool\b|жүзу", ["water_park"], "бассейн"),
+    (r"мечет|церк|храм|собор|синагог|mosque|church|мешіт", ["place_of_worship"], "храм"),
+    (r"смотров\w* площадк|viewpoint|observation deck", ["viewpoint"], "смотровая"),
+    (r"игров\w* (?:центр|комнат)|детск\w* центр|развлекательн\w* центр", ["kids_centre", "trampoline_park"], "детский центр"),
+]
+_PLACE_KIND_RE = [(re.compile(p, re.I), kinds, label) for p, kinds, label in PLACE_KINDS]
+PLACE_KIND_LABEL = {k: label for _, kinds, label in PLACE_KINDS for k in kinds}
+
+
+def place_kinds(text: str) -> list[str]:
+    out: list[str] = []
+    for rx, kinds, _ in _PLACE_KIND_RE:
+        if rx.search(text):
+            out += [k for k in kinds if k not in out]
+    return out
+
+
+# "не хочу кофе и кафе", "без кафе", "кроме ресторанов", "только не ТРЦ": what follows is what to stay away from,
+# up to the end of that clause ("не хочу кафе, хочу погулять": погулять is still wanted)
+NEGATION = re.compile(r"(?:\bне\s+(?:хочу|хотим|надо|нужн\w*|люблю|хотелось бы|интересн\w*|ищу)\b|\bтолько не\b|\bбез\b|\bкроме\b|"
+                      r"\bне\b(?=\s+(?:в\s+|на\s+)?(?:кофе|кафе|ресторан|бар|клуб|музе|парк|торгов|трц|тц|кино|театр|библиотек))|"
+                      r"\bdon'?t want\b|\bwithout\b|\bexcept\b|\bno\b|қаламаймын|керек емес)"
+                      r"(?P<what>[^,.;!?]*?)(?=[,.;!?]|\s(?:а|но|хочу|лучше|but|want)\b|$)", re.I)
+
+
+def negated(text: str) -> tuple[list[str], list[str]]:
+    """(needs, place kinds) the person said no to."""
+    needs: list[str] = []
+    kinds: list[str] = []
+    for m in NEGATION.finditer(text.lower()):
+        what = m["what"]
+        needs += [n for n in ALL_NEEDS if _NEED_RE[n].search(what) and n not in needs]
+        kinds += [k for k in place_kinds(what) if k not in kinds]
+    return needs, kinds
+
+
+def _apply_negation(it: Intent, text: str) -> Intent:
+    avoid, avoid_kinds = negated(text)
+    if avoid or avoid_kinds:
+        it.avoid = list(dict.fromkeys([*it.avoid, *avoid]))   # type: ignore[list-item]
+        it.avoid_kinds = list(dict.fromkeys([*it.avoid_kinds, *avoid_kinds]))
+        it.needs = [n for n in it.needs if n not in it.avoid]
+        it.place_kinds = [k for k in it.place_kinds if k not in it.avoid_kinds]
+        it.with_kids = it.with_kids and "kids" not in it.avoid
+    return it
+
+
 def parse_rules(text: str) -> Intent:
     t = text.strip()
     low = t.lower()
     it = Intent(text=t, lang=detect_lang(t))
+    it.place_kinds = place_kinds(low)
 
     # in the order the person said them: the first one is what they want most
     found = [(m.start(), n) for n in ALL_NEEDS if (m := _NEED_RE[n].search(low))]
@@ -230,7 +297,7 @@ def parse_rules(text: str) -> Intent:
     it.event_kinds = [k for k, rx in _KIND_RE.items() if rx.search(low)]
     cands = anchor_candidates(t)
     it.anchor_text = next((p for p, here in cands if here), cands[0][0] if cands else None)
-    return it
+    return _apply_negation(it, t)
 
 
 def anchor_candidates(text: str) -> list[tuple[str, bool]]:
@@ -266,12 +333,50 @@ def apply_defaults(it: Intent, explicit: set[str] | frozenset[str] = frozenset()
             it.assumptions.append(ASSUME_TIME)
     if it.mode == "walk" and "mode" not in explicit and not re.search(r"пешком|on foot|жаяу", it.text, re.I):
         it.assumptions.append(ASSUME_WALK)
+    if not it.needs and it.place_kinds:   # "библиотека": the kind is the whole request, no stroll guessed
+        return it
     if not it.needs:
         if it.only_events:
             it.needs = ["event"]
         else:
-            it.needs = ["walk", "culture", "coffee"]
+            it.needs = [n for n in ("walk", "culture", "coffee") if n not in it.avoid]   # type: ignore[misc]
             it.assumptions.append(ASSUME_STROLL)
+    return it
+
+
+# a follow-up that adds to the request ("а ещё поесть", "и кофе тоже") rather than changes it ("а музей?")
+ADDS = re.compile(r"^\W*(?:а|и|ну)?\s*(?:ещё|еще|тоже|также|плюс|заодно|и\b)|\b(?:тоже|also|too|as well)\b|^\W*(?:and|also|plus)\b", re.I)
+# "забудь", "новый запрос", "с нуля": the person starts over
+FRESH = re.compile(r"\b(?:забудь|новый запрос|с нуля|сначала|другое|start over|new search)\b", re.I)
+MODIFIER_NEEDS = {"kids", "accessible", "cheap", "free", "quiet", "indoor", "dog", "socket", "wifi"}
+_SCALARS = ("anchor_text", "deadline", "deadline_time", "start_time", "start_days", "start_weekday", "mode",
+            "with_kids", "group_size", "wheelchair", "persona", "want_route", "only_events")
+
+
+def follow_up(prev: Intent, new: Intent) -> Intent:
+    """A message after an answer usually refines it: "а подешевле", "без кофе", "а вечером?", "с ребёнком".
+    What the new words say wins; what they do not say is kept from the previous request (not its guesses).
+    prev: the previous request as understood, before defaults (`understand(..., defaults=False)`)."""
+    blank = Intent(text="")
+    it = new.model_copy(deep=True)
+    for f in _SCALARS:
+        if getattr(new, f) == getattr(blank, f):
+            setattr(it, f, getattr(prev, f))
+    if new.budget_min is None and new.budget_max is None:
+        it.budget_min, it.budget_max = prev.budget_min, prev.budget_max
+    # "с ребёнком", "подешевле", "где тихо": a condition on the same wish, not a new wish
+    own = bool(set(new.needs) - MODIFIER_NEEDS or new.place_kinds or new.event_kinds)
+    if not own or ADDS.search(new.text):
+        it.needs = list(dict.fromkeys([*prev.needs, *new.needs]))      # type: ignore[list-item]
+        it.place_kinds = list(dict.fromkeys([*prev.place_kinds, *new.place_kinds]))
+        it.event_kinds = list(dict.fromkeys([*prev.event_kinds, *new.event_kinds]))
+    # "без кофе" stays said until the person asks for it again
+    it.avoid = [n for n in dict.fromkeys([*prev.avoid, *new.avoid]) if n not in new.needs]   # type: ignore[misc]
+    it.avoid_kinds = [k for k in dict.fromkeys([*prev.avoid_kinds, *new.avoid_kinds]) if k not in new.place_kinds]
+    it.needs = [n for n in it.needs if n not in it.avoid]
+    it.place_kinds = [k for k in it.place_kinds if k not in it.avoid_kinds]
+    it.with_kids = it.with_kids and "kids" not in it.avoid
+    it.assumptions = []
     return it
 
 
@@ -372,6 +477,9 @@ def understand(text: str, *, lat: float | None = None, lon: float | None = None,
     except Exception as e:  # the LLM is a bonus, never a single point of failure
         log.warning("LLM intent parsing failed (%s); using rules", e)
         it = parse_rules(text)
+    if not it.place_kinds:            # Claude's reading has no such field: the words decide
+        it.place_kinds = place_kinds(text.lower())
+    _apply_negation(it, text)         # "не хочу кофе": whoever read it, coffee is out
     if lat is not None and lon is not None:
         it.lat, it.lon = lat, lon
     return apply_defaults(it) if defaults else it

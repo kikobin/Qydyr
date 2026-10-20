@@ -294,3 +294,50 @@ def test_nothing_on_foot_tries_a_taxi_unless_walking_was_asked(loaded):
     assert ans.items[0].what_to_do.startswith("Сбор: 19:00 · Начало: 20:00")   # glued listing lines come apart
     walk = a.ask("я у Хан Шатыра, хочу на стендап, пешком", at=now, weather_file=MILD)
     assert not walk.items and walk.intent.mode == "walk"
+
+
+def test_a_named_kind_of_place_is_the_answer():
+    """"Библиотека" was read as a stroll and got cafés. A kind named outright answers with that kind only."""
+    from qydyr_data.assistant.intent import parse_rules, place_kinds, understand
+    assert place_kinds("библиотека") == ["library"] and place_kinds("хочу на каток") == ["ice_rink"]
+    assert place_kinds("кинотеатр") == ["cinema"] and place_kinds("театр") == ["theatre"]   # "кинотеатр" is not a theatre
+    assert place_kinds("каталог") == [] and place_kinds("кофе и тихо") == []
+    it = understand("Библиотека")
+    assert it.place_kinds == ["library"] and it.needs == [] and not any("погулять" in a for a in it.assumptions)
+    assert "food" in parse_rules("кафе у Хан Шатыра").needs
+
+
+def test_what_the_person_does_not_want_is_left_out(loaded):
+    """"не хочу кофе и кафе" still got a café: the words were picked as wishes, the "не" was not read."""
+    from qydyr_data.assistant.intent import negated
+    assert {"coffee", "food"} <= set(negated("не хочу кофе и кафе")[0])
+    it = understand("я у Хан Шатыра, не хочу кофе и кафе, просто погулять")
+    assert "coffee" in it.avoid and "coffee" not in it.needs and "food" not in it.needs
+    assert understand("кроме ресторанов, что-нибудь интересное").avoid == ["food"]
+    ans = Assistant(DbData(loaded)).ask("я у Хан Шатыра, не хочу кофе и кафе", at=at(16), weather_file=MILD)
+    assert ans.items and not any(i.subcategory in {"cafe", "coffee_shop", "restaurant", "fast_food"} for i in ans.items)
+    assert any(c.key == "avoid" for c in ans.chips)
+    assert any(r.reason.startswith("вы просили без") for r in ans.rejected)
+
+
+def test_a_follow_up_keeps_what_was_said_before(loaded):
+    """Every next message was a new request: "а без кофе?" after "я у Хан Шатыра, хочу кофе" forgot the place."""
+    from qydyr_data.assistant.intent import follow_up
+    prev = understand("я у Хан Шатыра, с ребёнком, на час", defaults=False)
+    it = follow_up(prev, understand("а вечером?", defaults=False))
+    assert it.with_kids and it.budget_max == 60 and it.start_time is not None
+    it = follow_up(understand("кофе", defaults=False), understand("а ещё поесть", defaults=False))
+    assert {"coffee", "food"} <= set(it.needs)
+    it = follow_up(understand("библиотека", defaults=False), understand("а кинотеатр?", defaults=False))
+    assert it.place_kinds == ["cinema"]
+    it = follow_up(understand("погулять и кофе", defaults=False), understand("без кофе", defaults=False))
+    assert "coffee" not in it.needs and "walk" in it.needs and it.avoid == ["coffee"]
+
+    a = Assistant(DbData(loaded))
+    first = a.ask("я у Хан Шатыра, хочу кофе", at=at(16), weather_file=MILD)
+    ctx = a.understood
+    nxt = a.ask("а с ребёнком?", at=at(16), weather_file=MILD, context=ctx, context_anchor=first.anchor)
+    assert nxt.anchor is not None and nxt.anchor.label == first.anchor.label
+    assert nxt.intent.with_kids and "coffee" in nxt.intent.needs
+    fresh = a.ask("забудь, я у Байтерека", at=at(16), weather_file=MILD, context=ctx, context_anchor=first.anchor)
+    assert fresh.anchor.label != first.anchor.label and not fresh.intent.with_kids

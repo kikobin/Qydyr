@@ -51,6 +51,10 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --safe-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
+  /* the height people actually see: in Telegram it is smaller than 100vh (the webview opens half-way, the
+     keyboard and the header take their part), and Telegram tells it in --tg-viewport-stable-height */
+  --app-h: var(--tg-viewport-stable-height, 100dvh);
+  --tabbar: 0px;
   color-scheme: light;
 }
 
@@ -108,7 +112,7 @@ svg.i-xs { width: 14px; height: 14px; flex-shrink: 0; }
 .between { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 
 /* ---------- layout: the map, the ask bar on top, the sheet over the map ---------- */
-#app { position: fixed; inset: 0; }
+#app { position: fixed; left: 0; right: 0; top: 0; height: var(--app-h); overflow: hidden; }
 #map { position: absolute; inset: 0; background: var(--bg); }
 :root[data-theme="light"] #map .maplibregl-canvas { filter: sepia(.22) saturate(.85) brightness(1.01); }
 #fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
@@ -187,10 +191,10 @@ body[data-view="saved"] .chips, body[data-view="saved"] .wx { display: none; }
 
 /* ---------- the sheet ---------- */
 .sheet {
-  position: absolute; z-index: 10; left: 0; right: 0; bottom: 0; height: 88vh;
+  position: absolute; z-index: 10; left: 0; right: 0; bottom: 0; height: calc(var(--app-h) * 0.88);
   display: flex; flex-direction: column; border-radius: 22px 22px 0 0; background: var(--surface); overflow: hidden;
   box-shadow: 0 -10px 34px #6b4b241f;
-  transform: translateY(calc(88vh - var(--peek, 46vh))); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: translateY(calc(var(--app-h) * 0.88 - var(--peek, calc(var(--app-h) * 0.46)))); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform; touch-action: none;
 }
 .sheet::before {   /* the ornament band along the top edge, from the design */
@@ -202,8 +206,8 @@ body[data-view="saved"] .chips, body[data-view="saved"] .wx { display: none; }
 .sheet .grab span { width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
 .sheet .body {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
-  /* the sheet is 88vh tall and slides down: the hidden part is padding, so the last buttons scroll into view */
-  padding: 4px 16px calc(28px + var(--safe-bottom) + 88vh - var(--peek, 46vh));
+  /* the sheet is 88% tall and slides down: the hidden part is padding, so the last buttons scroll into view */
+  padding: 4px 16px calc(28px + var(--safe-bottom) + var(--tabbar) + var(--app-h) * 0.88 - var(--peek, calc(var(--app-h) * 0.46)));
   display: flex; flex-direction: column; gap: 16px; touch-action: pan-y;
 }
 /* rows that scroll sideways (walk cards, chips) have min-height 0 in a flex column: never let them shrink */
@@ -336,6 +340,22 @@ button.src { border: 0; background: none; padding: 0; display: inline-flex; alig
 .lang-btn { border: 0; background: none; font-size: 13px; color: var(--muted); min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }
 .lang-btn b { color: var(--ink); font-weight: 600; }
 .privacy { display: flex; gap: 6px; justify-content: center; align-items: center; font-size: 12px; color: var(--muted); text-align: center; }
+
+/* ---------- the tab bar: always on the bottom edge of what Telegram shows ---------- */
+.tabbar {
+  position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr);
+  background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line); padding: 6px 6px calc(6px + var(--safe-bottom));
+}
+.tab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px; border: 0; background: none; font-size: 12px; color: var(--muted); font-weight: 500; border-radius: 12px; }
+.tab svg { width: 22px; height: 22px; }
+.tab.on { color: var(--ink); }
+.tab.on svg { color: var(--primary); }
+.tab .n { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 700; line-height: 17px; text-align: center; }
+.tab .n.dot { min-width: 9px; width: 9px; height: 9px; padding: 0; top: 7px; left: calc(50% + 8px); }
+#app.tabs { --tabbar: 66px; }
+body.typing .tabbar { display: none; }   /* the keyboard is up: the bar would ride on top of it */
+body.typing #app.tabs { --tabbar: 0px; }
 
 /* ---------- results ---------- */
 .result { background: var(--bg); border-radius: 22px; overflow: hidden; box-shadow: var(--card-shadow); }
@@ -524,7 +544,7 @@ button.src { border: 0; background: none; padding: 0; display: inline-flex; alig
 
 /* ---------- toasts, overlays ---------- */
 .toast {
-  position: absolute; z-index: 40; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(24px + var(--safe-bottom));
+  position: absolute; z-index: 40; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(24px + var(--safe-bottom) + var(--tabbar));
   max-width: min(92vw, 420px); padding: 12px 18px; border-radius: 14px; background: var(--ink); color: var(--bg);
   box-shadow: var(--shadow); font-size: 14px; font-weight: 500; animation: rise 0.25s ease-out;
 }
@@ -562,7 +582,8 @@ button.src { border: 0; background: none; padding: 0; display: inline-flex; alig
     left: 16px; right: auto; bottom: 16px; top: calc(196px + var(--safe-top)); width: 420px; height: auto;
     border-radius: 24px; box-shadow: var(--card-shadow), var(--shadow); transform: none !important;
   }
-  .sheet .body { padding-bottom: 28px; }
+  .sheet .body { padding-bottom: calc(28px + var(--tabbar)); }
+  .tabbar { left: 16px; right: auto; width: 420px; bottom: 16px; border-radius: 0 0 24px 24px; border: 0; }
   .sheet .grab { display: none; }
   body[data-view="home"] .sheet, body[data-view="tours"] .sheet, body[data-view="saved"] .sheet { top: calc(86px + var(--safe-top)); }
   .chips { margin: 0; padding: 0 0 2px; }
