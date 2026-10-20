@@ -1,4 +1,12 @@
-/* Vendored from @fontsource (SIL Open Font License 1.1): Unbounded, Onest, JetBrains Mono. */
+/* Vendored from @fontsource (SIL Open Font License 1.1): Unbounded, Onest, JetBrains Mono.
+   Lora 600 (SIL OFL 1.1, from the v5 design file): headings; covers Kazakh letters and ₸. */
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url(./fonts/lora-600.woff2) format('woff2');
+}
 @font-face {
   font-family: 'Unbounded';
   font-style: normal;

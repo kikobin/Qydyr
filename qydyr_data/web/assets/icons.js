@@ -44,6 +44,15 @@ export const I = {
   play: (c) => s(`<path d="M7 5l12 7-12 7z"/>`, c),
   flag: (c) => s(`<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>`, c),
   link: (c) => s(`<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>`, c),
+  // v5 design: the tab bar, tiles, notes
+  home: (c) => s(`<path d="M3 10.5L12 3l9 7.5V21h-6v-6H9v6H3z"/>`, c),
+  star: (c) => s(`<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>`, c),
+  shield: (c) => s(`<path d="M12 3l8 3v6c0 4.6-3.6 8-8 9.5C7.6 20 4 16.6 4 12V6z"/><path d="M9 12l2 2 4-4"/>`, c),
+  lock: (c) => s(`<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5"/>`, c),
+  search: (c) => s(`<circle cx="10.5" cy="10.5" r="7"/><path d="M16 16l5 5"/>`, c),
+  warning: (c) => s(`<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4.5M12 17.5h.01"/>`, c),
+  coffee: (c) => s(`<path d="M4 9h12v5a6 6 0 0 1-12 0zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M7 3.5c-1 1 1 2 0 3M11 3.5c-1 1 1 2 0 3"/>`, c),
+  music: (c) => s(`<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>`, c),
 };
 
 // reason codes of "почему не это" -> icon

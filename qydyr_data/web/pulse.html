@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="assets/app.css">
 <style>
-  body { overflow: hidden; background: #070F1C; }
+  body { overflow: hidden; background: var(--bg); }
   .pulse { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto minmax(0, 1fr) auto; gap: 20px 28px; padding: 28px 36px; }
   .p-head { grid-column: 1 / span 2; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
   .p-title { display: flex; align-items: center; gap: 18px; }
@@ -17,14 +17,14 @@
   .p-title p { margin: 4px 0 0; color: var(--text-2); font-size: clamp(13px, 1.1vw, 17px); }
   .live { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 15px; }
   .live i { width: 10px; height: 10px; border-radius: 50%; background: var(--sky); animation: beat 1.4s ease-in-out infinite; }
-  .p-map { position: relative; border-radius: 28px; overflow: hidden; border: 1px solid #1D3150; background: var(--bg); }
+  .p-map { position: relative; border-radius: 28px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
   #pmap { position: absolute; inset: 0; }
   .p-side { grid-row: 2 / span 2; grid-column: 2; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
   .counters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .counter { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 20px; background: var(--surface); border: 1px solid #1D3150; }
+  .counter { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
   .counter b { font-family: var(--font-display); font-weight: 600; font-size: 28px; }
   .counter span { font-size: 13px; color: var(--text-2); }
-  .panel { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 22px; background: var(--surface); border: 1px solid #1D3150; min-height: 0; }
+  .panel { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); min-height: 0; }
   .panel h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
   .feed { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 9px; overflow: hidden; }
   .feed-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; animation: rise2 0.4s ease-out; }
@@ -37,12 +37,12 @@
   .brow { display: grid; grid-template-columns: 120px minmax(0, 1fr) 36px; align-items: center; gap: 10px; font-size: 14px; }
   .brow .bar { height: 8px; border-radius: 4px; background: var(--sky); transition: width 0.6s; }
   .brow .n { font-family: var(--font-mono); text-align: right; color: var(--text-2); }
-  .qr { display: flex; align-items: center; gap: 18px; padding: 16px; border-radius: 22px; background: #EDF2F7; color: #0A1424; }
+  .qr { display: flex; align-items: center; gap: 18px; padding: 16px; border-radius: 22px; background: #FBF7EF; color: #2A1F17; }
   .qr img { width: 132px; height: 132px; border-radius: 12px; flex-shrink: 0; background: #fff; }
   .qr b { font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1.2; }
-  .qr p { margin: 6px 0; font-size: 15px; line-height: 1.45; color: #233958; }
+  .qr p { margin: 6px 0; font-size: 15px; line-height: 1.45; color: #6B5B4D; }
   .qr code { font-family: var(--font-mono); font-size: 15px; font-weight: 500; }
-  .ticker { display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 18px; background: var(--surface); border: 1px solid #1D3150; overflow: hidden; white-space: nowrap; }
+  .ticker { display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; white-space: nowrap; }
   .ticker strong { flex-shrink: 0; position: relative; z-index: 1; padding-right: 8px; background: var(--surface); font-size: 13px; letter-spacing: 0.1em; color: var(--sun); }
   .ticker .vp { flex: 1; min-width: 0; overflow: hidden; }
   .ticker .run { display: inline-flex; gap: 28px; animation: marquee 40s linear infinite; font-size: 16px; }

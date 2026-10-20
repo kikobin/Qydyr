@@ -96,21 +96,22 @@ export class CityMap {
 
   _layers() {
     const m = this.map;
-    const sky = getComputedStyle(document.documentElement).getPropertyValue("--sky").trim() || "#00AFCA";
-    const text = getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#EDF2F7";
+    const css = getComputedStyle(document.documentElement);
+    const pin = css.getPropertyValue("--pin").trim() || "#A8361F";     // routes and "you can reach this far"
+    const you = css.getPropertyValue("--you").trim() || "#0A7BA2";     // where you are
     const empty = { type: "FeatureCollection", features: [] };
     for (const id of ["reach", "me-cell", "route"]) {
       if (!m.getSource(id)) m.addSource(id, { type: "geojson", data: empty, lineMetrics: id === "route" });
     }
     if (!m.getLayer("reach-fill")) {
-      m.addLayer({ id: "reach-fill", type: "fill", source: "reach", paint: { "fill-color": sky, "fill-opacity": 0.05 } });
-      m.addLayer({ id: "reach-line", type: "line", source: "reach", paint: { "line-color": text, "line-opacity": 0.28, "line-width": 1.2, "line-dasharray": [3, 4] } });
-      m.addLayer({ id: "me-fill", type: "fill", source: "me-cell", paint: { "fill-color": sky, "fill-opacity": 0.14 } });
-      m.addLayer({ id: "me-line", type: "line", source: "me-cell", paint: { "line-color": sky, "line-opacity": 0.8, "line-width": 1.2, "line-dasharray": [2, 2] } });
+      m.addLayer({ id: "reach-fill", type: "fill", source: "reach", paint: { "fill-color": pin, "fill-opacity": 0.05 } });
+      m.addLayer({ id: "reach-line", type: "line", source: "reach", paint: { "line-color": pin, "line-opacity": 0.6, "line-width": 1.6, "line-dasharray": [3, 3] } });
+      m.addLayer({ id: "me-fill", type: "fill", source: "me-cell", paint: { "fill-color": you, "fill-opacity": 0.14 } });
+      m.addLayer({ id: "me-line", type: "line", source: "me-cell", paint: { "line-color": you, "line-opacity": 0.8, "line-width": 1.2, "line-dasharray": [2, 2] } });
       m.addLayer({ id: "route-glow", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": sky, "line-width": 10, "line-opacity": 0.18, "line-blur": 6 } });
+        paint: { "line-color": "#FFFFFF", "line-width": 8, "line-opacity": 0.9 } });
       m.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-width": 4, "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "rgba(0,175,202,0.08)", 0.6, sky, 1, "#D9FAFF"] } });
+        paint: { "line-width": 4, "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, pin, 1, pin] } });
     }
   }
 

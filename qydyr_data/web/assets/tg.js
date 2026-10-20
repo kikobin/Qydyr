@@ -11,7 +11,7 @@ export function initTelegram({ onBack, theme }) {
     W.ready();
     W.expand();
     if (atLeast("7.7")) W.disableVerticalSwipes();          // panning the map must not close the app
-    const bg = theme === "light" ? "#EEF3F8" : "#0A1424";
+    const bg = theme === "light" ? "#F3EBDD" : "#1B1612";
     if (atLeast("6.1")) { W.setHeaderColor(bg); W.setBackgroundColor(bg); }
     if (atLeast("7.10")) W.setBottomBarColor(bg);
     W.BackButton.onClick(onBack);

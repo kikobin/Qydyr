@@ -8,8 +8,8 @@
 <link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="assets/app.css">
 <style>
-  body { overflow: auto; background: #070F1C; }
-  :root { --none: #FF7A7A; --guess: #B79CFF; --far: #FEC50C; --ok: #00AFCA; }
+  body { overflow: auto; background: var(--bg); }
+  :root { --none: #E5735A; --guess: #B79CFF; --far: var(--gold); --ok: var(--sky); }
   .city { max-width: 1320px; margin: 0 auto; padding: 28px 24px 56px; display: flex; flex-direction: column; gap: 28px; }
   .c-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
   .c-title { display: flex; align-items: center; gap: 16px; min-width: 0; }
@@ -20,7 +20,7 @@
   .links a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text); text-decoration: none; font-size: 14px; }
   .links a:hover { border-color: var(--sky); }
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 20px; background: var(--surface); border: 1px solid #1D3150; }
+  .kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
   .kpi b { font-family: var(--font-display); font-weight: 600; font-size: 26px; }
   .kpi span { font-size: 13px; color: var(--text-2); line-height: 1.35; }
   .kpi.warn b { color: var(--far); }
@@ -30,11 +30,11 @@
   .scen button { min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
   .scen button[aria-pressed="true"] { background: var(--sky); color: var(--sky-ink); border-color: var(--sky); font-weight: 600; }
   .audit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; }
-  .c-map { position: relative; min-height: 520px; border-radius: 24px; overflow: hidden; border: 1px solid #1D3150; background: var(--bg); }
+  .c-map { position: relative; min-height: 520px; border-radius: 24px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
   #cmap { position: absolute; inset: 0; }
   .legend { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border-radius: 14px; background: var(--overlay); border: 1px solid var(--line); font-size: 12px; }
   .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
-  .panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px; background: var(--surface); border: 1px solid #1D3150; min-width: 0; }
+  .panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
   .panel h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
   .req { font-size: 15px; line-height: 1.45; }
   .req q { font-weight: 600; }

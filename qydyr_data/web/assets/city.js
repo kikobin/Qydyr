@@ -124,7 +124,7 @@ async function loadData() {
   try { d = await api.cityData(); } catch (_) { return; }
   const p = d.places, e = d.events;
   const kpis = [
-    [n0(p.n), `${plural(p.n, ["место", "места", "мест"])} из OpenStreetMap`],
+    [n0(p.n), `${plural(p.n, ["место", "места", "мест"])} из OpenStreetMap${p.dgis_new ? " и 2ГИС" : ""}`],
     [n0(e.n), `${plural(e.n, ["событие", "события", "событий"])} из ${d.sources.filter((s) => s.kind !== "osm" && s.items).length} афиш и сайтов`],
     [`${pct(p.with_hours, p.n)}%`, "мест с часами работы — остальным пишем «часы неизвестны»", pct(p.with_hours, p.n) < 50],
     [`${pct(p.with_wheelchair, p.n)}%`, "мест с отметкой о доступности для колясок", pct(p.with_wheelchair, p.n) < 30],
@@ -158,7 +158,7 @@ async function start() {
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "© OpenStreetMap contributors" }));
   // no basemap (blocked CDN, venue Wi-Fi): the cells on a plain background instead of an empty map
   let styled = false;
-  const plain = () => { if (!styled) { styled = true; map.setStyle({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#0A1424" } }] }); } };
+  const plain = () => { if (!styled) { styled = true; map.setStyle({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#1B1612" } }] }); } };
   const fallback = setTimeout(plain, 3500);
   map.on("error", () => { if (!styled) plain(); });
   map.on("style.load", () => {

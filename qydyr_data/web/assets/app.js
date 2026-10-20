@@ -1,8 +1,8 @@
 // Qydyr Mini App: map + sheet. Works inside Telegram and in any browser.
 import { api } from "./api.js";
 import { WeatherFx } from "./fx.js";
-import { QUICK_QUERIES, SPEECH_LANG, STR, WALK } from "./i18n.js";
-import { ASYQ, I, LOGO, REASON_ICON } from "./icons.js";
+import { QUICK_QUERIES, SPEECH_LANG, STR, UI, WALK } from "./i18n.js";
+import { ASYQ, I, REASON_ICON } from "./icons.js";
 import { ASTANA, CityMap } from "./map.js";
 import { MASCOT_NAME, mascot, moodForWeather } from "./mascot.js";
 import * as T from "./tg.js";
@@ -16,7 +16,7 @@ const hm = (iso) => { if (!iso) return ""; const d = local(iso); return `${Strin
 const isoLocal = (date) => { const d = new Date(date.getTime() + TZ_OFFSET_MIN * 60000); return d.toISOString().slice(0, 19) + "+05:00"; };
 
 const S = {
-  lang: "ru", t: STR.ru, theme: "dark", config: null,
+  lang: "ru", t: STR.ru, theme: "light", config: null,
   loc: null, query: "", overrides: {}, preset: null, at: null,
   answer: null, sel: 0, view: "home", stack: [], place: null, walks: null, walkTitle: null,
   loading: false, favs: [], sheet: "half",
@@ -44,10 +44,14 @@ function setSheet(state) {
   $("#sheet").style.setProperty("--peek", peek);
 }
 
+// how far each screen opens the sheet: the pages (home, walks, saved) cover the map, results leave it in view
+const SHEET_FOR = { home: "full", tours: "full", saved: "full", place: "full", whynot: "full", results: "half", machine: "half" };
+
 function go(view, push = true) {
   const at = S.stack.lastIndexOf(view);
   if (push && at >= 0) S.stack.length = at;          // results ⇄ machine ⇄ results is a step back, not three forward
   else if (push && S.view !== view) S.stack.push(S.view);
+  if (SHEET_FOR[view] && S.view !== view) setSheet(SHEET_FOR[view]);
   S.view = view;
   T.backButton(S.stack.length > 0);
   renderSheet();
@@ -80,6 +84,7 @@ function nowLabel() {
 function renderTop() {
   $("#q").placeholder = S.t.placeholder;
   $("#mic").setAttribute("aria-label", S.t.voice);
+  $("#cam").setAttribute("aria-label", S.t.photo);
   $("#go").setAttribute("aria-label", S.t.send);
   const chips = S.answer ? S.answer.chips : [];
   const parts = [];
@@ -107,29 +112,57 @@ function renderTop() {
   } else wx.hidden = true;
 }
 
-// ---------------------------------------------------------------- sheet views
+// ---------------------------------------------------------------- sheet views (v5 design: warm paper, Lora, Suyrbek)
+const ART = "assets/art/";
+// a category -> its illustration (cards, the place page) and its small icon
+const SPOT = { culture: "museum", food: "tea", park: "river-park", landmark: "monument", nightlife: "dombra", event: "dombra",
+  kids: "kite", shopping: "monument", entertainment: "kite", sport: "river-park", leisure: "kite", work: "tea" };
+const CAT_ICON = { culture: "museum", food: "cafe", park: "park", landmark: "landmark", nightlife: "events", event: "events",
+  kids: "kids", entertainment: "events", sport: "park", leisure: "park", shopping: "landmark", work: "cafe" };
+const TOUR_ART = { nurzhol: "esil-evening.svg", botanical: "river-park.webp", independence: "monument.webp", expo: "museum.webp" };
+const QUICK_ICON = [I.pin, I.coffee, I.kid, I.wheel, I.moon, I.walk];
+const TAB_VIEWS = ["home", "results", "tours", "saved"];
+const U = () => UI[S.lang];
+const catOf = (x) => (x && (x.kind === "event" ? "event" : x.category)) || "other";
+const spot = (cat, cls = "spot") => `<img class="${cls}" src="${ART}${SPOT[cat] || "river-park"}.webp" alt="" loading="lazy" decoding="async">`;
+const catIcon = (cat) => `<img class="cat" src="${ART}cat-${CAT_ICON[cat] || "landmark"}.svg" alt="" aria-hidden="true">`;
+const deg = (t) => `${t > 0 ? "+" : t < 0 ? "−" : ""}${Math.abs(t)}°`;
+
 function renderSheet() {
-  const v = S.view, t = S.t;
+  const v = S.view;
   let html = "";
-  if (S.loading) html = `<div class="loading" aria-live="polite">${mascot("think", { size: 56, title: MASCOT_NAME[S.lang] })}<span>${esc(t.loading)}</span></div><div class="skeleton"></div><div class="skeleton" style="height:80px"></div>`;
+  if (S.loading) html = viewLoading();
   else if (v === "home") html = viewHome();
   else if (v === "results") html = viewResults();
   else if (v === "whynot") html = viewWhyNot();
   else if (v === "place") html = viewPlace();
   else if (v === "machine") html = viewMachine();
   else if (v === "saved") html = viewSaved();
+  else if (v === "tours") html = viewTours();
   else if (v === "tour") html = viewTour();
   else if (v === "walk") html = viewWalk();
   else if (v === "walkdone") html = viewWalkDone();
+  document.body.dataset.view = v;
   $("#sheet .body").innerHTML = html;
+  renderTabs();
   if (v === "machine") bindMachine();
+}
+
+function renderTabs() {
+  const v = S.view, on = TAB_VIEWS.includes(v) && !S.walk;
+  const nav = $("#tabbar");
+  nav.hidden = !on;
+  $("#app").classList.toggle("tabs", on);
+  if (!on) return;
+  const ic = { home: I.home, results: I.map, tours: I.walk, saved: I.bookmark };
+  nav.innerHTML = TAB_VIEWS.map((k) => `<button class="tab ${k === v ? "on" : ""}" data-act="tab" data-tab="${k}"${k === v ? ' aria-current="page"' : ""}>${ic[k]()}<span>${esc(U().tabs[k])}</span></button>`).join("");
 }
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 function head(title, { backBtn = false, right = "", wrap = false } = {}) {
   return `<div class="view-head">${backBtn ? `<button class="icon-btn" data-act="back" aria-label="${esc(S.t.back)}">${I.back()}</button>` : ""}
-    <h1 class="${wrap ? "" : "one"}" style="flex:1">${esc(title)}</h1>${right}</div>`;
+    <h1 class="${wrap ? "" : "one"}">${esc(title)}</h1>${right}</div>`;
 }
 
 function mascotMood() {
@@ -153,110 +186,163 @@ function feelsNow() {
   return cw ? Math.round(cw.feels_c) : null;
 }
 
+// the temperature the greeting and the time machine show, by the same rule
+function tempNow() {
+  const cw = S.answer && S.answer.context && S.answer.context.weather;
+  if (S.preset || S.at) return cw && (!S.preset || cw.simulated) ? Math.round(cw.temp_c) : null;
+  if (S.wx && S.wx.temp != null) return S.wx.temp;
+  return cw ? Math.round(cw.temp_c) : null;
+}
+
 function moodLine(mood) {
   const f = feelsNow();
   const fn = W().mood[mood];
   return fn ? fn(f == null ? "" : f > 0 ? `+${f}` : String(f)) : "";
 }
 
-function mascotSays(mood, html, { size = 64 } = {}) {
+function mascotSays(mood, html, { size = 84 } = {}) {
   return `<div class="mascot-row">${mascot(mood, { size, title: MASCOT_NAME[S.lang] })}
     <div class="bubble"><span class="who">${esc(MASCOT_NAME[S.lang])}</span>${html}</div></div>`;
 }
 
-function tourCard(c) {
-  return `<button class="walk tour" data-act="tour" data-id="${esc(c.id)}"><span class="badge">${mascot("hello", { size: 26, still: true })}${esc(W().guided)}</span>
-    <span class="t">${esc(c.title)}</span><span class="s">${esc(c.subtitle)}</span><span class="m">${esc(c.meta)}</span></button>`;
+// "Совет Суырбека": the assistant's idea of what to do there, said by the mascot
+function tip(text, { who = U().tip_who, sub = "", mood = "hello" } = {}) {
+  return `<div class="tip">${mascot(mood, { size: 50, still: true })}<div><p class="tip-who">${esc(who)}</p><p>${esc(text)}</p>${sub ? `<p class="fine" style="margin-top:4px">${esc(sub)}</p>` : ""}</div></div>`;
+}
+
+function viewLoading() {
+  return `<div class="thinking">${mascot("think", { size: 96, title: MASCOT_NAME[S.lang] })}<div><h2>${esc(U().looking)}</h2><p class="muted small" style="margin-top:4px">${esc(U().looking_sub)}</p></div></div>
+    <div class="list" aria-label="${esc(S.t.loading)}"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>`;
+}
+
+function walkRow(w, i) {   // a walk put together for here and now
+  const first = w.answer && w.answer.items && w.answer.items[0];
+  return `<button class="row-card" data-act="walk" data-i="${i}">${spot(catOf(first))}<span class="grow"><strong>${esc(w.title)}</strong>
+    <span class="meta"><span>${esc(w.meta)}</span></span>${w.subtitle ? `<span class="small muted">${esc(w.subtitle)}</span>` : ""}</span>${I.chev("i-s")}</button>`;
+}
+
+function tourCard(c, wide = false) {
+  const art = TOUR_ART[c.id] || "esil-evening.svg";
+  return `<button class="walk-card${wide ? " wide" : ""}" data-act="tour" data-id="${esc(c.id)}"><span class="badge">${esc(W().guided)}</span>
+    <span class="art"><img class="${art.endsWith(".svg") ? "wide" : ""}" src="${ART}${art}" alt="" loading="lazy" decoding="async"></span>
+    <span class="walk-info"><strong>${esc(c.title)}</strong><span class="meta"><span>${esc(c.meta)}</span></span>${c.subtitle ? `<span class="s">${esc(c.subtitle)}</span>` : ""}</span></button>`;
 }
 
 function viewHome() {
-  const t = S.t;
-  const walks = S.walks === null ? `<div class="skeleton" style="height:116px"></div>`
-    : S.walks.length ? `<div class="walks">${S.walks.map((w, i) => `<button class="walk" data-act="walk" data-i="${i}"><span class="t">${esc(w.title)}</span><span class="s">${esc(w.subtitle)}</span><span class="m">${esc(w.meta)}</span></button>`).join("")}</div>` : "";
-  const mood = mascotMood();
-  const line = mood !== "hello" ? moodLine(mood) : "";
-  const tours = S.tours && S.tours.length ? `<h3 class="sec">${esc(W().tours)}</h3><div class="walks">${S.tours.map(tourCard).join("")}</div>` : "";
-  const resume = S.saved && !S.walk ? `<button class="mini resume" data-act="resume">${I.play()}<span class="t">${esc(W().resume(S.saved.title))}</span>${I.chev("i-s")}</button>` : "";
-  return `${mascotSays(mood, `<b>${esc(t.hello)}</b><br>${esc(line || t.hello_sub)}`, { size: 84 })}
+  const t = S.t, u = U(), w = W();
+  const mood = mascotMood(), temp = tempNow();
+  const line = (mood !== "hello" && moodLine(mood)) || t.hello_sub;
+  const resume = S.saved && !S.walk ? `<button class="resume" data-act="resume"><span class="resume-play">${I.play("i-s")}</span>
+    <span class="grow"><strong>${esc(w.resume(S.saved.title))}</strong></span>${I.chev("i-s")}</button>` : "";
+  const walks = S.walks === null ? `<section><div class="section-head"><h2>${esc(u.fits_now)}</h2></div><div class="list"><div class="skeleton"></div></div></section>`
+    : S.walks && S.walks.length ? `<section><div class="section-head"><h2>${esc(u.fits_now)}</h2></div><div class="list">${S.walks.map(walkRow).join("")}</div></section>` : "";
+  const tours = S.tours && S.tours.length ? `<section><div class="section-head"><h2>${esc(w.tours)}</h2><button class="link" data-act="tab" data-tab="tours">${esc(u.all)}</button></div>
+    <div class="carousel">${S.tours.map((c) => tourCard(c)).join("")}</div></section>` : "";
+  const invite = S.config && S.config.bot_username ? `<section class="invite"><div class="invite-top">${mascot("hello", { size: 112, still: true })}
+    <div class="grow"><h2>${esc(u.invite_title)}</h2><p>${esc(u.invite_text)}</p></div></div>
+    <button class="btn primary full" data-act="friends">${I.people("i-s")}${esc(u.invite_btn)}</button><p class="fine" style="text-align:center">${esc(u.invite_fine)}</p></section>` : "";
+  return `<div class="greeting">${mascot(mood, { size: 120, title: MASCOT_NAME[S.lang] })}
+      <div class="bubble"><h1>${esc(temp != null ? u.hello_temp(deg(temp)) : u.hello_plain)}</h1><p>${esc(line)}</p></div></div>
     ${resume}
+    <div class="chip-row">${t.quick.map((q, i) => `<button class="chip" data-act="quick" data-i="${i}">${(QUICK_ICON[i] || I.pin)("i-s")}${esc(q)}</button>`).join("")}</div>
+    ${walks}
+    <div class="tiles"><button class="tile gold" data-act="surprise">${I.star()}<strong>${esc(t.surprise)}</strong><span>${esc(u.surprise_sub)}</span></button>
+      <button class="tile" data-act="machine">${I.clock()}<strong>${esc(t.machine)}</strong><span>${esc(u.machine_sub)}</span></button></div>
     ${tours}
-    <div class="quick">${t.quick.map((q, i) => `<button class="chip" data-act="quick" data-i="${i}">${esc(q)}</button>`).join("")}</div>
-    <div class="actions"><button class="btn sun" style="flex:1" data-act="surprise">${I.dice()}${esc(t.surprise)}</button>
-      <button class="btn" style="flex:1" data-act="machine">${I.clock()}${esc(t.machine)}</button></div>
-    ${S.walks !== undefined && (S.walks === null || S.walks.length) ? `<h3 class="sec">${esc(S.tours && S.tours.length ? W().nearby_walks : t.walks)}</h3>${walks}` : ""}
-    ${S.config && S.config.llm ? `<div class="actions"><label class="btn" style="flex:1;cursor:pointer">${I.camera()}${esc(t.photo)}<input id="photo" type="file" accept="image/*" capture="environment" class="sr-only"></label></div>` : ""}
-    <button class="mini" data-act="city">${I.map()}<span style="display:flex;flex-direction:column;gap:2px"><span class="t">${esc(t.city)}</span><span class="meta" style="font-family:var(--font-body)">${esc(t.city_sub)}</span></span>${I.chev("i-s")}</button>
-    ${S.config && S.config.bot_username ? `<button class="mini" data-act="friends">${I.people()}<span style="display:flex;flex-direction:column;gap:2px"><span class="t">${esc(t.friends)}</span><span class="meta" style="font-family:var(--font-body)">${esc(t.friends_sub)}</span></span>${I.chev("i-s")}</button>` : ""}
-    <div class="actions"><button class="btn" style="flex:1" data-act="saved">${I.bookmark()}${esc(t.saved)}</button>
-      <button class="btn" data-act="lang" aria-label="${esc(t.lang)}">${I.globe()}${{ ru: "Рус", kk: "Қаз", en: "Eng" }[S.lang]}</button></div>
-    <p class="note">${esc(t.privacy)}</p>`;
+    ${invite}
+    <button class="row-card" data-act="city"><span class="icon-tile">${I.map()}</span><span class="grow"><strong>${esc(t.city)}</strong><span class="small muted">${esc(t.city_sub)}</span></span>${I.chev("i-s")}</button>
+    <div class="foot"><button class="lang-btn" data-act="lang">${esc(u.lang_label)}: <b>${esc(u.lang_name[S.lang])}</b>${I.globe("i-xs")}</button>
+      <p class="privacy">${I.lock("i-xs")}${esc(t.privacy)}</p></div>`;
 }
 
 function itemCard(it, i) {
-  const t = S.t, sel = i === S.sel;
-  const live = it.labels.includes("now") ? "live" : it.labels.includes("soon") ? "soon" : "";
+  const t = S.t, u = U(), cat = catOf(it);
+  const live = it.labels.includes("now");
+  const status = `<span class="status ${live ? "on" : ""}"><span class="dot ${live ? "live" : it.labels.includes("soon") ? "soon" : ""}"></span>${esc(it.status)}</span>`;
+  if (i !== S.sel && S.answer.items.length > 1) {
+    return `<article class="result compact" data-act="select" data-i="${i}"><span class="numb">${i + 1}</span>${catIcon(cat)}
+      <span class="grow"><strong>${esc(it.title)}</strong>${status}</span><span class="mins">${it.walk_min ? `${it.walk_min} ${esc(t.min)}` : esc(t.here)}</span>
+      <button class="icon-btn" data-act="route" data-i="${i}" aria-label="${esc(t.route)}">${I.route("i-s")}</button></article>`;
+  }
   const walk = it.walk_min === 0 ? t.here : (it.by === "taxi" ? t.taxi_min : t.walk_min)(it.walk_min);
   const dist = it.distance_m >= 1000 ? `${(it.distance_m / 1000).toFixed(1).replace(".", ",")} км` : `${it.distance_m} ${t.m}`;
   const [lo, hi] = it.visit_min;
   const leave = it.leave_by ? (new Date(it.leave_by) <= new Date(new Date(S.answer.at).getTime() + 60000) ? t.leave_now : t.leave_by(hm(it.leave_by))) : "";
   const srcs = [...new Set((it.sources || []).map(host))].join(", ") || "OpenStreetMap";
-  const full = sel || (S.answer.items.length === 1);
-  return `<article class="card ${sel ? "sel" : ""}" data-act="select" data-i="${i}">
-    <div class="card-top"><span class="num">${i + 1}</span>
-      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-        <h2>${esc(it.title)}</h2>
-        <div class="status"><span class="dot ${live}"></span><span>${esc(it.status)}</span>${it.rating ? `<span class="meta" title="2ГИС, ${it.reviews}">★ ${String(it.rating.toFixed(1)).replace(".", ",")}</span>` : ""}</div>
-        <span class="meta">${esc(walk)} · ${esc(dist)} · ${esc(t.stay)} ${lo === hi ? lo : `${lo}–${hi}`} ${esc(t.min)}</span>
-        ${it.where ? `<span class="meta" style="font-family:var(--font-body)">${I.pin("i-s")} ${esc(it.where)}</span>` : ""}
-        ${leave ? `<span class="leave">${I.clock("i-s")}${esc(leave)}</span>` : ""}
-      </div></div>
-    ${full ? `
-      ${it.pitch ? `<p class="why"><b>${esc(t.why)}:</b> ${esc(it.pitch)}</p>` : it.why.length ? `<p class="why"><b>${esc(t.why)}:</b> ${esc(it.why.join("; "))}</p>` : ""}
-      ${it.group_fit && it.group_fit.length ? `<p class="why">${it.group_fit.map(esc).join("<br>")}</p>` : ""}
-      <div class="todo"><span class="tag ${it.what_to_do_source === "data" ? "fact" : "idea"}">${esc(it.what_to_do_source === "data" ? t.fact : t.idea)}</span><span>${esc(it.what_to_do)}</span></div>
-      ${it.warnings.length ? `<div class="warn">${esc(it.warnings.join("; "))}</div>` : ""}
-      <div class="src">${esc(t.source)}: ${esc(srcs)} · ${esc(confWord(it.confidence))}${it.pitch ? ` · ${esc(t.by_claude)}` : ""}</div>
-      <div class="actions">
-        <button class="btn primary" data-act="route" data-i="${i}">${I.route()}${esc(t.route)}</button>
-        ${it.place_id ? `<button class="icon-btn" data-act="place" data-i="${i}" aria-label="${esc(t.ask_place)}">${I.ask()}</button>` : ""}
-        <button class="icon-btn" data-act="share" data-i="${i}" aria-label="${esc(t.share)}">${I.share()}</button>
-      </div>` : ""}
-  </article>`;
+  const facts = [
+    `<span class="fact">${I.walk("i-xs")}${esc(dist)}</span>`,
+    `<span class="fact">${I.clock("i-xs")}${esc(t.stay)} ${lo === hi ? lo : `${lo}–${hi}`} ${esc(t.min)}</span>`,
+    it.where ? `<span class="fact">${I.pin("i-xs")}${esc(it.where)}</span>` : "",
+    it.rating ? `<span class="fact gold" title="2ГИС, ${it.reviews}">${I.star("i-xs")}${String(it.rating.toFixed(1)).replace(".", ",")} · 2ГИС</span>` : "",
+    leave ? `<span class="fact gold">${I.clock("i-xs")}${esc(leave)}</span>` : "",
+    ...it.warnings.map((x) => `<span class="fact warn">${I.warning("i-xs")}${esc(x)}</span>`),
+  ].join("");
+  const why = it.pitch || it.why.join("; ");
+  const todo = !it.what_to_do ? "" : it.what_to_do_source === "data"
+    ? `<div class="block"><h3>${esc(u.whats_there)}<span class="src">${esc(u.from_listing)}</span></h3><p>${esc(it.what_to_do)}</p></div>`
+    : tip(it.what_to_do);
+  return `<article class="result sel" data-act="select" data-i="${i}">
+    <div class="result-art">${spot(cat)}<span class="numb">${i + 1}</span></div>
+    <div class="result-body">
+      <p class="kind">${catIcon(cat)}${esc(cap(catLabel(cat)))}, ${esc(walk)}</p>
+      <h2>${esc(it.title)}</h2>
+      ${status}
+      <div class="facts">${facts}</div>
+      ${why ? `<div class="block"><h3>${esc(u.why)}</h3><p>${esc(why)}</p></div>` : ""}
+      ${it.group_fit && it.group_fit.length ? `<p class="small">${it.group_fit.map(esc).join("<br>")}</p>` : ""}
+      ${todo}
+      <p class="source">${esc(t.source)}: ${esc(srcs)} · ${esc(confWord(it.confidence))}${it.pitch ? ` · ${esc(t.by_claude)}` : ""}</p>
+      <div class="actions"><button class="btn primary" data-act="route" data-i="${i}">${I.route("i-s")}${esc(t.route)}</button>
+        ${it.place_id ? `<button class="btn secondary" data-act="place" data-i="${i}">${esc(u.more)}</button>` : ""}
+        <button class="icon-btn" data-act="share" data-i="${i}" aria-label="${esc(t.share)}">${I.share()}</button></div>
+    </div></article>`;
 }
 
 function viewResults() {
-  const a = S.answer, t = S.t;
+  const a = S.answer, t = S.t, u = U();
   if (!a) return viewHome();
   const n = a.items.length;
   const f = Object.fromEntries((a.funnel || []).map((x) => [x.key, x.n]));
   const sim = a.context && a.context.simulated;
   const notes = (a.notes || []).filter((x) => !x.startsWith("Симуляция"));
   const r = a.route;
-  return `${head(S.walkTitle || (n ? t.picked(n) : t.nothing), { backBtn: S.stack.length > 0, right: `<span class="when">${esc(nowLabel())}</span>` })}
-    ${sim ? `<div class="banner sim">${I.clock("i-s")}<span>${esc(t.sim_banner(sim))}</span></div>` : ""}
-    ${a.funnel && a.funnel.length ? `<button class="funnel-link" data-act="whynot"><span><b>${f.nearby}</b> ${esc(t.funnel_short.nearby)} → <b>${f.reachable}</b> ${esc(t.funnel_short.reachable)} → <b>${f.open}</b> ${esc(t.funnel_short.open)} → <b>${f.fit}</b> ${esc(t.funnel_short.fit)} → <b class="n">${f.picked}</b></span>${I.chev("i-s")}</button>` : ""}
-    ${!n ? mascotSays("shrug", esc(notes[0] || t.nothing)) : notes.length ? `<div class="banner info"><span>${notes.map(esc).join("<br>")}</span></div>` : ""}
-    ${S.walkTour && S.walkTitle ? `<div class="actions"><button class="btn primary" style="flex:1" data-act="walk-gen">${I.play()}${esc(W().start)}</button><button class="btn" data-act="walk-gen-demo">${esc(W().demo)}</button></div>` : ""}
-    ${a.items.map(itemCard).join("")}
-    ${r ? `<h3 class="sec">${esc(t.route_title(r.total_min))}</h3><div class="timeline">${r.stops.map((s) => `<div class="tl"><span class="tm">${hm(s.arrive_at)}–${hm(s.leave_at)}</span><span class="rail"></span><span>${esc(s.title)}${s.walk_min ? ` <span class="tl-walk">+${s.walk_min} ${esc(t.min)}</span>` : ""}</span></div>`).join("")}</div>` : ""}
-    ${n ? `<div class="actions"><button class="btn" style="flex:1" data-act="vote" data-v="up">${I.thumbUp()}${S.lang === "ru" ? "Подходит" : S.lang === "kk" ? "Сай келеді" : "Good"}</button>
-      <button class="btn" style="flex:1" data-act="vote" data-v="down">${I.thumbDown()}${S.lang === "ru" ? "Не то" : S.lang === "kk" ? "Сай емес" : "Not it"}</button></div>` : ""}
-    <div class="actions"><button class="btn sun" style="flex:1" data-act="surprise">${I.dice()}${esc(t.surprise)}</button>
-      <button class="btn" style="flex:1" data-act="machine">${I.clock()}${esc(t.machine)}</button></div>`;
+  if (!n) {
+    return `${S.stack.length ? head("", { backBtn: true }) : ""}
+      <div class="empty">${mascot("shrug", { size: 130, title: MASCOT_NAME[S.lang] })}<h1>${esc(u.nothing_title)}</h1><p class="muted">${esc(notes[0] || t.nothing)}</p></div>
+      <div class="list">
+        <button class="option" data-act="search-more">${I.route()}<span class="grow"><strong>${esc(u.search_more)}</strong><span class="sub">${esc(u.search_more_sub)}</span></span>${I.chev("i-s")}</button>
+        <button class="option" data-act="surprise">${I.star()}<span class="grow"><strong>${esc(t.surprise)}</strong><span class="sub">${esc(u.surprise_sub)}</span></span>${I.chev("i-s")}</button>
+        ${a.funnel && a.funnel.length ? `<button class="option" data-act="whynot">${I.list()}<span class="grow"><strong>${esc(t.why_not)}</strong></span>${I.chev("i-s")}</button>` : ""}
+      </div>
+      <button class="btn secondary full" data-act="focus-search">${esc(u.change_query)}</button>`;
+  }
+  const plan = r ? `<div class="block"><h3>${esc(t.route_title(r.total_min))}</h3><ol class="plan">${r.stops.map((s) => `${s.walk_min ? `<li class="leg">${esc(t.walk_min(s.walk_min))}</li>` : ""}<li><b>${hm(s.arrive_at)}–${hm(s.leave_at)}</b><span>${esc(s.title)}</span></li>`).join("")}</ol></div>` : "";
+  return `<div class="sheet-head"><h1>${esc(S.walkTitle || t.picked(n))}</h1><span class="when">${esc(nowLabel())}</span></div>
+    ${f.nearby != null ? `<button class="why-link" data-act="whynot">${esc(u.why_link(f.nearby, n))}${I.chev("i-xs")}</button>` : ""}
+    ${sim ? `<div class="sim-note">${I.clock("i-s")}<span>${esc(t.sim_banner(sim))}</span></div>` : ""}
+    ${notes.length ? `<div class="note">${I.target("i-s")}<span>${notes.map(esc).join("<br>")}</span></div>` : ""}
+    ${S.walkTour && S.walkTitle ? `<div class="actions"><button class="btn primary" data-act="walk-gen">${I.play("i-s")}${esc(W().start)}</button><button class="btn secondary" style="flex:0 0 auto" data-act="walk-gen-demo">${esc(W().demo)}</button></div>` : ""}
+    <div class="list">${a.items.map(itemCard).join("")}</div>
+    ${plan}
+    <div class="feedback"><span>${esc(u.fits_q)}</span><button data-act="vote" data-v="up">${I.check("i-s")}${esc(u.yes_save)}</button><button data-act="vote" data-v="down">${I.close("i-s")}${esc(u.not_it)}</button></div>
+    <div class="tiles"><button class="tile gold" data-act="surprise">${I.star()}<strong>${esc(t.surprise)}</strong><span>${esc(u.surprise_sub)}</span></button>
+      <button class="tile" data-act="machine">${I.clock()}<strong>${esc(t.machine)}</strong><span>${esc(u.machine_sub)}</span></button></div>`;
 }
 
 function viewWhyNot() {
-  const a = S.answer, t = S.t;
+  const a = S.answer, t = S.t, u = U();
   const max = Math.max(1, ...(a.funnel || []).map((x) => x.n));
+  const shades = ["#E7D3A6", "#EDC679", "#F2B33D", "#D88A2A"];
   const rows = (a.funnel || []).map((x, i, arr) => `<div class="frow ${i === arr.length - 1 ? "last" : ""}"><span>${esc(t.funnel[x.key] || x.label)}</span>
-    <span><span class="bar" style="display:block;width:${Math.max(4, (x.n / max) * 100)}%"></span></span><span class="n">${x.n}</span></div>`).join("");
+    <span class="track"><span class="bar" style="width:${Math.max(4, (x.n / max) * 100)}%;background:${i === arr.length - 1 ? "var(--pin)" : shades[Math.min(i, 3)]}"></span></span><span class="n">${x.n}</span></div>`).join("");
   const rej = (a.rejected || []).map((r, i) => `<button class="rej" data-act="rej" data-i="${i}">
     <span class="ic">${I[REASON_ICON[r.reason_code] || "target"]("i-s")}</span>
-    <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="t">${esc(r.title)}</span><span class="r">${esc(r.reason)}</span></span></button>`).join("");
-  return `${head(t.why_not, { backBtn: true })}
+    <span class="grow"><span class="t">${esc(r.title)}</span><span class="r">${esc(r.reason)}</span></span></button>`).join("");
+  return `<div class="sheet-head"><h1>${esc(t.why_not)}</h1><button class="icon-btn" data-act="back" aria-label="${esc(t.close)}">${I.close()}</button></div>
+    <p class="muted" style="margin-top:-8px">${esc(u.by_facts)}</p>
     <section class="funnel" aria-label="${esc(t.why_not)}">${rows}</section>
-    ${rej ? `<h3 class="sec">${esc(t.rejected)}</h3><div style="display:flex;flex-direction:column;gap:2px">${rej}</div>` : ""}
-    <p class="note">${esc(t.algo_note)}</p>`;
+    ${rej ? `<div><h2 style="margin-bottom:4px">${esc(u.nearby_title)}</h2>${rej}</div>` : ""}
+    <div class="note">${I.shield("i-s")}<span>${esc(t.algo_note)}</span></div>`;
 }
 
 function viewPlace() {
@@ -265,30 +351,27 @@ function viewPlace() {
   const card = p.card;
   const ev = (card && card.events) || [];
   const fav = S.favs.some((f) => f.id === p.id);
-  const qa = p.qa.map((x) => `<div class="bubble-q">${esc(x.q)}</div>${x.a ? `<div class="bubble-a"><span class="cert ${x.a.certainty}">${x.a.certainty === "yes" ? I.check("i-s") : ""}${esc(t.cert[x.a.certainty])}</span><span>${esc(x.a.answer)}</span>${x.a.evidence && x.a.evidence.length ? `<span class="src">${esc([...new Set(x.a.evidence.map((e) => (/^https?:/.test(e) ? host(e) : e)))].join(" · "))}</span>` : ""}</div>` : `<div class="loading"><span class="spinner"></span></div>`}`).join("");
-  return `${head("", { backBtn: true, right: `<button class="icon-btn" data-act="fav" aria-label="${esc(fav ? t.unsave : t.save)}" style="${fav ? "color:var(--sun-text);border-color:var(--sun)" : ""}">${I.bookmark()}</button>` })}
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-        <span class="kicker">${esc(catLabel(p.category))}${p.walk != null ? ` · ${p.walk} ${esc(t.min)}` : ""}</span>
-        <h2 class="place-title">${esc(p.title)}</h2>
-        ${card ? `<span class="meta">${esc(card.badge)}</span>` : ""}
-      </div>
-      <span class="compass" id="compass" hidden><span id="arrow">${I.arrow("i")}</span><span class="meta" id="dist"></span></span>
-    </div>
-    ${p.reason ? `<div class="banner info">${I.target("i-s")}<span>${esc(p.reason)}</span></div>` : ""}
-    ${ev.length ? `<div class="live-box"><span style="font-weight:600">${esc(t.events_here)}</span>${ev.slice(0, 3).map((e) => `<div class="status"><span class="dot ${e.state === "now" ? "live" : "soon"}"></span><span><b>${esc(e.title)}</b> · ${esc(e.badge)}</span></div>`).join("")}</div>` : ""}
-    <div class="grid3">
-      <button class="btn primary" data-act="route-place">${I.route("i-s")}${esc(t.route)}</button>
-      <button class="btn sun" data-act="story">${I.speaker("i-s")}${esc(t.tell)}</button>
-      <button class="icon-btn" data-act="share-place" aria-label="${esc(t.share)}">${I.share()}</button>
-    </div>
-    ${p.story ? `<div class="bubble-a"><span class="tag idea" style="align-self:flex-start">${esc(t.idea)}</span><span>${esc(p.story.text)}</span><span class="src">${esc(t.story_by)}</span></div>` : ""}
-    <h3 class="sec">${esc(t.ask_place)}</h3>
-    <div class="chips" style="margin:0 -16px;padding:0 16px">${t.qa_suggest.map((q, i) => `<button class="chip" data-act="qa-suggest" data-i="${i}">${esc(q)}</button>`).join("")}</div>
-    ${qa}
-    <form class="qa-in" data-act="qa-form"><label class="sr-only" for="qa">${esc(t.ask_place)}</label>
-      <input id="qa" type="text" placeholder="${esc(t.qa_placeholder)}" autocomplete="off">
-      <button class="icon-btn solid" type="submit" aria-label="${esc(t.send)}">${I.send()}</button></form>`;
+  const cat = p.category || (card && card.category) || "other";
+  const qa = p.qa.map((x) => `<div class="msg user">${esc(x.q)}</div>${x.a ? `<div class="msg"><b class="${x.a.certainty}">${esc(cap(t.cert[x.a.certainty]))}:</b>${esc(x.a.answer)}${x.a.evidence && x.a.evidence.length ? `<small>${esc([...new Set(x.a.evidence.map((e) => (/^https?:/.test(e) ? host(e) : e)))].join(" · "))}</small>` : ""}</div>` : `<div class="loading"><span class="spinner"></span></div>`}`).join("");
+  return `<div class="place-hero">${spot(cat)}<div class="hero-tools"><button class="circle-btn" data-act="back" aria-label="${esc(t.back)}">${I.back()}</button>
+      <div class="row"><button class="circle-btn ${fav ? "saved" : ""}" data-act="fav" aria-pressed="${fav}" aria-label="${esc(fav ? t.unsave : t.save)}">${I.bookmark()}</button>
+        <button class="circle-btn" data-act="share-place" aria-label="${esc(t.share)}">${I.share("i-s")}</button></div></div></div>
+    <div class="between" style="align-items:flex-start"><div class="block" style="gap:8px;min-width:0">
+        <p class="kind">${catIcon(cat)}${esc(cap(catLabel(cat)))}${p.walk ? `, ${esc(t.walk_min(p.walk))}` : ""}</p>
+        <h1 class="place-title">${esc(p.title)}</h1>
+        ${card ? `<p class="live"><span class="dot"></span>${esc(card.badge)}</p>` : ""}</div>
+      <span class="compass" id="compass" hidden><span id="arrow">${I.arrow("i")}</span><span class="fine" id="dist"></span></span></div>
+    ${p.reason ? `<div class="note">${I.target("i-s")}<span>${esc(p.reason)}</span></div>` : ""}
+    ${ev.length ? `<div class="block"><h3>${esc(t.events_here)}</h3><ul class="events">${ev.slice(0, 3).map((e) => `<li><span class="dot ${e.state === "now" ? "on" : "soon"}"></span><span class="grow">${esc(e.title)}</span><span class="when">${esc(e.badge)}</span></li>`).join("")}</ul></div>` : ""}
+    <div class="actions"><button class="btn primary" data-act="route-place">${I.route("i-s")}${esc(t.route)}${p.walk ? `, ${p.walk} ${esc(t.min)}` : ""}</button>
+      <button class="btn secondary" data-act="story">${I.speaker("i-s")}${esc(t.tell)}</button></div>
+    ${p.story ? tip(p.story.text, { who: MASCOT_NAME[S.lang], sub: t.story_by, mood: "talk" }) : ""}
+    <div class="block"><h3>${esc(t.ask_place)}</h3>
+      <div class="chip-row">${t.qa_suggest.map((q, i) => `<button class="chip" data-act="qa-suggest" data-i="${i}">${esc(q)}</button>`).join("")}</div>
+      ${qa ? `<div class="chat" style="margin-top:6px">${qa}</div>` : ""}
+      <form class="ask-input" data-act="qa-form"><label class="sr-only" for="qa">${esc(t.ask_place)}</label>
+        <input id="qa" type="text" placeholder="${esc(t.qa_placeholder)}" autocomplete="off" enterkeyhint="send">
+        <button type="submit" aria-label="${esc(t.send)}">${I.send("i-s")}</button></form></div>`;
 }
 
 function serverNow() { return S.config && S.config.now ? new Date(S.config.now) : new Date(); }
@@ -300,67 +383,77 @@ function slots() {   // "now", then every half hour after it: the first tick is 
 }
 
 function viewMachine() {
-  const t = S.t;
+  const t = S.t, u = U();
   const sl = slots();
   const idx = S.at ? Math.max(0, sl.findIndex((d) => isoLocal(d) === S.at)) : 0;
   const lbl = S.at ? `${t.day[local(S.at).getUTCDay()]} ${hm(S.at)}` : `${t.now} · ${hm(serverNow().toISOString())}`;
   const ctx = S.answer && S.answer.context;
   const realAir = ctx && ctx.air && (ctx.air.source !== "симуляция" || S.preset === "smog");
+  const mood = mascotMood(), temp = tempNow();
+  const say = moodLine(mood) || (ctx && ctx.comfort ? cap(ctx.comfort.label) : t.hello_sub);
+  const factors = ctx && ctx.comfort ? ctx.comfort.factors.join(" · ") + (realAir && ctx.air.pm2_5 != null ? ` · PM2.5 ${Math.round(ctx.air.pm2_5)}` : "") : "";
   return `${head(t.machine, { backBtn: true, right: `<button class="icon-btn" data-act="machine-reset" aria-label="${esc(t.reset)}" title="${esc(t.reset)}">${I.reset()}</button>` })}
-    <div style="display:flex;flex-direction:column;gap:2px">
-      <div style="display:flex;justify-content:space-between"><label for="tslider" style="font-size:13px;font-weight:600;color:var(--text-2)">${esc(t.time)}</label><span class="mono" id="tlabel">${esc(lbl)}</span></div>
-      <input id="tslider" type="range" min="0" max="${sl.length - 1}" value="${idx}" style="width:100%;height:44px;margin:0;accent-color:var(--sky)">
-      <div class="mono" style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3)">${[0, 7, 14, 21, 28].map((k) => `<span>${hm(sl[k].toISOString())}</span>`).join("")}</div>
-    </div>
-    <div class="presets" role="group" aria-label="${esc(t.weather)}">
-      <button class="chip" data-act="preset" data-p="" aria-pressed="${!S.preset}">${esc(t.now)}</button>
-      ${Object.entries(t.presets).map(([k, v]) => `<button class="chip" data-act="preset" data-p="${k}" aria-pressed="${S.preset === k}">${esc(v)}</button>`).join("")}
-    </div>
-    ${mascotSays(mascotMood(), esc(moodLine(mascotMood()) || (ctx && ctx.comfort ? cap(ctx.comfort.label) : t.hello_sub)), { size: 60 })}
-    ${ctx && ctx.comfort ? `<div class="comfort-row"><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-weight:600">${esc(cap(ctx.comfort.label))}</span>
-      <span class="meta">${esc(ctx.comfort.factors.join(" · "))}${realAir && ctx.air.pm2_5 != null ? ` · PM2.5 ${Math.round(ctx.air.pm2_5)}` : ""}</span></span>
-      <span class="meter" role="img" aria-label="${esc(t.comfort)} ${ctx.comfort.level}/4">${[0, 1, 2, 3].map((k) => `<span class="${k < ctx.comfort.level ? "on" : ""}"></span>`).join("")}</span></div>` : ""}
-    ${S.answer && S.answer.items.length ? `<button class="mini" data-act="results">${I.list()}<span style="display:flex;flex-direction:column;min-width:0"><span class="t">${esc(S.t.picked(S.answer.items.length))}</span><span class="meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(S.answer.items.map((x) => x.title).join(" · "))}</span></span>${I.chev("i-s")}</button>` : ""}`;
+    <div class="sim-note">${I.clock("i-s")}<span>${esc(u.sim_note)}</span></div>
+    <div class="weather-card">${temp != null ? `<div class="wc-temp">${deg(temp)}</div>` : ""}<p class="wc-say">${esc(say)}</p>
+      ${factors ? `<span class="meta"><span>${esc(factors)}</span></span>` : ""}
+      ${ctx && ctx.comfort ? `<span class="meter" role="img" aria-label="${esc(t.comfort)} ${ctx.comfort.level}/4">${[0, 1, 2, 3].map((k) => `<span class="${k < ctx.comfort.level ? "on" : ""}"></span>`).join("")}</span>` : ""}
+      ${mascot(mood, { size: 136, title: MASCOT_NAME[S.lang] })}</div>
+    <div class="slider"><div class="between"><label for="tslider" class="muted small">${esc(u.when)}</label><output id="tlabel" for="tslider">${esc(lbl)}</output></div>
+      <input id="tslider" type="range" min="0" max="${sl.length - 1}" value="${idx}">
+      <div class="between fine">${[0, 7, 14, 21, 28].map((k) => `<span>${hm(sl[k].toISOString())}</span>`).join("")}</div></div>
+    <div class="preset-grid" role="group" aria-label="${esc(t.weather)}">
+      <button class="preset" data-act="preset" data-p="" aria-pressed="${!S.preset}">${esc(t.now)}</button>
+      ${Object.entries(t.presets).map(([k, v]) => `<button class="preset" data-act="preset" data-p="${k}" aria-pressed="${S.preset === k}">${esc(v)}</button>`).join("")}</div>
+    ${S.answer && S.answer.items.length ? `<button class="btn primary full" data-act="results">${I.list("i-s")}${esc(u.show_places)} · ${S.answer.items.length}</button>` : ""}`;
 }
 
 function viewSaved() {
-  const t = S.t;
-  return `${head(t.saved, { backBtn: true })}
-    ${S.favs.length ? S.favs.map((f, i) => `<button class="mini" data-act="fav-open" data-i="${i}">${I.bookmark()}<span class="t">${esc(f.title)}</span></button>`).join("") : `<p class="note">${esc(t.saved_empty)}</p>`}`;
+  const t = S.t, u = U();
+  return `${head(u.tabs.saved, { backBtn: S.stack.length > 0 })}
+    ${S.favs.length ? `<p class="muted small" style="margin-top:-10px">${esc(u.saved_count(S.favs.length))}</p>
+      <div class="list">${S.favs.map((f, i) => `<article class="saved-row">${spot(f.category || "other")}<button class="saved-open" data-act="fav-open" data-i="${i}"><strong>${esc(f.title)}</strong>
+        <span class="status">${esc(cap(catLabel(f.category || "other")))}</span></button><button class="bookmark-btn" data-act="fav-del" data-i="${i}" aria-label="${esc(t.unsave)}">${I.bookmark()}</button></article>`).join("")}</div>`
+      : `<div class="empty-card">${mascot("map", { size: 110, title: MASCOT_NAME[S.lang] })}<p style="margin-top:6px">${esc(t.saved_empty)}</p>
+        <button class="link" data-act="tab" data-tab="results">${esc(u.find_places)}</button></div>`}`;
 }
 
+function viewTours() {
+  const w = W();
+  const tours = S.tours === null ? `<div class="skeleton"></div><div class="skeleton"></div>` : (S.tours || []).map((c) => tourCard(c, true)).join("");
+  const near = S.walks && S.walks.length ? `<section><div class="section-head"><h2>${esc(w.nearby_walks)}</h2></div><div class="list">${S.walks.map(walkRow).join("")}</div></section>` : "";
+  return `${head(w.tours, { backBtn: S.stack.length > 0 })}<div class="list">${tours}</div>${near}`;
+}
 
 // ---------------------------------------------------------------- guided walks
 function viewTour() {
-  const tr = S.tour, w = W();
-  if (!tr) return `<div class="loading">${mascot("think", { size: 56 })}<span>${esc(S.t.loading)}</span></div><div class="skeleton"></div>`;
+  const tr = S.tour, w = W(), u = U();
+  if (!tr) return viewLoading();
   const resume = S.saved && S.saved.tourId === tr.id && S.saved.visited.length;
-  return `${head(tr.title, { backBtn: true })}
-    <span class="meta" style="margin-top:-6px">${esc(tr.meta)}${tr.subtitle ? ` · ${esc(tr.subtitle)}` : ""}</span>
-    ${mascotSays(outfit() || "happy", esc(tr.intro), { size: 72 })}
+  return `${head(tr.title, { backBtn: true, wrap: true })}
+    <div class="meta" style="margin-top:-8px"><span>${esc(tr.meta)}</span>${tr.subtitle ? `<span>${esc(tr.subtitle)}</span>` : ""}</div>
+    ${mascotSays(outfit() || "happy", esc(tr.intro), { size: 92 })}
     <div class="actions">
-      <button class="btn primary" style="flex:1" data-act="${resume ? "resume" : "walk-start"}">${I.play()}${esc(resume ? w.resume(tr.title) : w.start)}</button>
-      <button class="btn" data-act="walk-demo" title="${esc(w.demo_hint)}">${esc(w.demo)}</button>
+      <button class="btn primary" data-act="${resume ? "resume" : "walk-start"}">${I.play("i-s")}${esc(resume ? w.resume(tr.title) : w.start)}</button>
+      <button class="btn secondary" style="flex:0 0 auto" data-act="walk-demo" title="${esc(w.demo_hint)}">${esc(w.demo)}</button>
     </div>
-    <ol class="stops">${tr.stops_list.map((st, i) => `<li><button class="stop-row" data-act="tour-stop" data-i="${i}"><span class="num">${st.n}</span>
-      <span class="tx"><span class="t">${esc(st.name)}</span><span class="s">${esc(st.facts[0] ? st.facts[0].text : "")}</span></span></button></li>`).join("")}</ol>
-    ${tr.hours ? `<p class="why"><b>${esc(w.hours)}:</b> ${esc(tr.hours.text)}${tr.hours.source ? ` <button class="src link" data-act="link" data-url="${esc(tr.hours.source)}">${esc(host(tr.hours.source))}</button>` : ""}</p>` : ""}
-    ${tr.best_season ? `<p class="why"><b>${esc(w.season)}:</b> ${esc(tr.best_season)}</p>` : ""}
-    <p class="note">${esc(w.facts_note)} ${esc(w.privacy)}</p>`;
+    <div class="block"><h3>${esc(u.route_stops)}</h3><ol class="stops">${tr.stops_list.map((st, i) => `<li><button class="stop-item" data-act="tour-stop" data-i="${i}"><span class="stop-num">${st.n}</span>
+      <span class="grow"><strong>${esc(st.name)}</strong><p>${esc(st.facts[0] ? st.facts[0].text : "")}</p></span></button></li>`).join("")}</ol></div>
+    ${tr.hours ? `<p class="source">${esc(w.hours)}: ${esc(tr.hours.text)}${tr.hours.source ? ` <button class="src" data-act="link" data-url="${esc(tr.hours.source)}">${esc(host(tr.hours.source))}</button>` : ""}</p>` : ""}
+    ${tr.best_season ? `<p class="source">${esc(w.season)}: ${esc(tr.best_season)}</p>` : ""}
+    <div class="note">${I.shield("i-s")}<span>${esc(w.facts_note)} ${esc(w.privacy)}</span></div>`;
 }
 
 function stopCard(st) {
-  const w = W(), k = S.walk;
-  return `<article class="card sel stop-card">
-    <div class="card-top"><span class="num">${st.n}</span><div style="display:flex;flex-direction:column;gap:4px;min-width:0"><h2>${esc(st.name)}</h2></div></div>
-    <ul class="facts">${st.facts.map((f) => `<li><span>${esc(f.text)}</span>${f.source ? `<button class="src link" data-act="link" data-url="${esc(f.source)}">${I.link("i-xs")}${esc(f.source_name)}</button>` : `<span class="src">${esc(f.source_name)}</span>`}</li>`).join("")}</ul>
-    ${st.tip ? `<div class="todo"><span class="tag fact">${esc(w.tip)}</span><span>${esc(st.tip)}</span></div>` : ""}
-    ${k && k.story && k.story.stop === st.id ? `<div class="bubble-a"><span class="tag idea" style="align-self:flex-start">${esc(S.t.idea)}</span><span>${esc(k.story.text)}</span><span class="src">${esc(w.story_claude)}</span></div>` : ""}
+  const w = W(), k = S.walk, u = U();
+  return `<article class="stop-card"><p class="kind">${I.pin("i-xs")}${esc(u.here_now)}</p><h2>${esc(st.name)}</h2>
+    ${st.facts.map((f) => `<div class="fact-row"><span>${esc(f.text)}</span>${f.source ? `<button class="src" data-act="link" data-url="${esc(f.source)}">${I.link("i-xs")}${esc(f.source_name)}</button>` : `<span class="src">${esc(f.source_name)}</span>`}</div>`).join("")}
+    ${st.tip ? tip(st.tip) : ""}
+    ${k && k.story && k.story.stop === st.id ? tip(k.story.text, { who: MASCOT_NAME[S.lang], sub: w.story_claude, mood: "talk" }) : ""}
     <div class="actions">
-      <button class="btn sun" style="flex:1" data-act="walk-listen">${I.speaker("i-s")}${esc(k && k.speaking ? w.stop_talk : w.listen)}</button>
-      ${S.tour.kind === "tour" && S.config && S.config.llm ? `<button class="btn" style="flex:1" data-act="walk-more">${esc(w.more)}</button>` : ""}
+      <button class="btn secondary" data-act="walk-listen">${I.speaker("i-s")}${esc(k && k.speaking ? w.stop_talk : w.listen)}</button>
+      ${S.tour.kind === "tour" && S.config && S.config.llm ? `<button class="btn secondary" data-act="walk-more">${esc(w.more)}</button>` : ""}
     </div>
-    <button class="btn primary wide" data-act="walk-next">${esc(w.next)}${I.chev("i-s")}</button></article>`;
+    <button class="btn primary full" data-act="walk-next" style="margin-top:8px">${esc(w.next)}${I.chev("i-s")}</button></article>`;
 }
 
 function viewWalk() {
@@ -376,27 +469,29 @@ function viewWalk() {
   const line = cur ? w.arrived(cur.name)
     : nxt ? (k.visited.length ? w.to_next(nxt.name, dist, k.next_min) : (k.next_m != null ? w.to_start(nxt.name, dist) : w.to_next(nxt.name, "", 0))) : "";
   const mood = k.speaking ? "talk" : outfit() || (cur ? "happy" : "hello");
-  const nudges = (k.nudges || []).map((x) => `<div class="banner info nudge">${x.kind === "event" ? I.event("i-s") : x.kind === "warm" ? I.snow("i-s") : I.target("i-s")}<span>${esc(x.text)}</span></div>`).join("");
-  return `${head(tr.title, { backBtn: true, right: `<span class="when">${esc(w.stop_of(n, total))}</span>` })}
-    <div class="segs" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${k.visited.length}">${segs}</div>
-    ${mascotSays(mood, `${esc(line)}${k.off_route && nxt && !cur ? `<br><span class="warn">${esc(w.off_route(nxt.name))}</span>` : ""}`)}
+  const nudges = (k.nudges || []).map((x) => `<div class="event-hint nudge">${x.kind === "event" ? I.music("i-s") : x.kind === "warm" ? I.snow("i-s") : I.target("i-s")}<span>${esc(x.text)}</span></div>`).join("");
+  return `<div class="block" style="gap:10px"><p class="kind">${I.walk("i-xs")}${esc(tr.title)}</p>
+      <div class="between" style="align-items:center"><h1>${esc(w.stop_of(n, total))}</h1><button class="link" style="color:var(--muted)" data-act="walk-finish">${esc(w.finish)}</button></div>
+      <div class="walk-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${k.visited.length}">${segs}</div></div>
+    ${cur ? `<p class="next">${I.check("i-xs")}<span>${esc(line)}</span></p>` : mascotSays(mood, `${esc(line)}${k.off_route && nxt ? `<br><span class="warn">${esc(w.off_route(nxt.name))}</span>` : ""}`)}
     ${nudges}
     ${cur ? stopCard(cur) : ""}
-    <div class="actions">
-      ${!cur && nxt ? `<button class="btn" style="flex:1" data-act="walk-here">${I.pin("i-s")}${esc(w.here)}</button>` : ""}
-      <button class="btn" ${cur || !nxt ? 'style="flex:1"' : ""} data-act="walk-finish">${I.flag("i-s")}${esc(w.finish)}</button>
-    </div>
-    <p class="note">${esc(k.sim ? w.demo_hint : w.privacy)}</p>`;
+    ${!cur && nxt ? `<button class="btn primary full" data-act="walk-here">${I.pin("i-s")}${esc(w.here)}</button>` : ""}
+    <p class="fine">${esc(k.sim ? w.demo_hint : w.privacy)}</p>`;
 }
 
 function viewWalkDone() {
-  const d = S.walkDone, w = W();
+  const d = S.walkDone, w = W(), u = U();
   if (!d) return viewHome();
-  return `${head(w.done_title)}
-    <div class="done-hero">${mascot("celebrate", { size: 132, title: MASCOT_NAME[S.lang] })}
-      <p class="big">${esc(d.title)}</p><p class="meta">${esc(w.done_line(d.stops, d.facts, d.min))}</p><p class="why">${esc(w.finish_line)}</p></div>
-    <div class="actions"><button class="btn primary" style="flex:1" data-act="walk-invite">${I.share()}${esc(w.invite)}</button>
-      <button class="btn" style="flex:1" data-act="walk-again">${esc(w.again)}</button></div>`;
+  const confetti = Array.from({ length: 12 }, (_, i) => `<i class="confetti" style="left:${(i * 29) % 95}%;top:${(i * 37) % 85}%;transform:rotate(${i * 29}deg);background:${["#F2B33D", "#C8412B", "#0A7BA2"][i % 3]}"></i>`).join("");
+  return `<div class="done"><div class="done-art">${confetti}${mascot("celebrate", { size: 170, title: MASCOT_NAME[S.lang] })}</div>
+    <div class="center"><h1>${esc(w.done_title)}</h1><p class="muted" style="margin-top:6px">${esc(d.title)}</p></div>
+    <div class="stats"><div><div class="stat-v">${d.stops}</div><div class="stat-l">${esc(u.stat.stops)}</div></div>
+      <div><div class="stat-v">${d.facts}</div><div class="stat-l">${esc(u.stat.facts)}</div></div>
+      <div><div class="stat-v">${d.min}</div><div class="stat-l">${esc(u.stat.min)}</div></div></div>
+    <p class="muted center">${esc(w.finish_line)}</p>
+    <button class="btn primary full" data-act="walk-invite">${I.share("i-s")}${esc(w.invite)}</button>
+    <button class="btn secondary full" data-act="walk-again">${esc(w.again)}</button></div>`;
 }
 
 function renderKeep() {
@@ -417,7 +512,7 @@ function focusStop(i) {
   if (!st) return;
   map.focus(st.lon, st.lat);
   T.haptic.tap();
-  if (S.view === "tour") document.querySelectorAll(".stop-row").forEach((r, k) => r.classList.toggle("sel", k === i));
+  if (S.view === "tour") document.querySelectorAll(".stop-item").forEach((r, k) => r.classList.toggle("sel", k === i));
 }
 
 async function loadTours() {
@@ -869,13 +964,18 @@ async function tellStory() {
   } catch (_) { toast(S.t.net_error); }
 }
 
-function toggleFav() {
-  const p = S.place;
-  const i = S.favs.findIndex((f) => f.id === p.id);
-  if (i >= 0) S.favs.splice(i, 1); else S.favs.push({ id: p.id, place_id: p.card ? p.card.place_id : null, title: p.title, lat: p.lat, lon: p.lon, category: p.category });
+function saveFav(f) {
+  if (!S.favs.some((x) => x.id === f.id)) S.favs.push(f);
   S.favs = S.favs.slice(-20);
   T.store.set("favs", JSON.stringify(S.favs));
   T.haptic.tap();
+}
+
+function toggleFav() {
+  const p = S.place;
+  const i = S.favs.findIndex((f) => f.id === p.id);
+  if (i >= 0) { S.favs.splice(i, 1); T.store.set("favs", JSON.stringify(S.favs)); T.haptic.tap(); }
+  else saveFav({ id: p.id, place_id: p.card ? p.card.place_id : null, title: p.title, lat: p.lat, lon: p.lon, category: p.category });
   renderSheet();
 }
 
@@ -989,7 +1089,7 @@ function setLang(lang) {
 function applyTheme(theme) {
   S.theme = theme;
   document.documentElement.dataset.theme = theme;
-  if (map && S.config) map.setStyle(S.config.map_style[theme], theme === "light" ? "#EEF3F8" : "#0A1424");
+  if (map && S.config) map.setStyle(S.config.map_style[theme], theme === "light" ? "#F3EBDD" : "#1B1612");
 }
 
 // ---------------------------------------------------------------- events
@@ -1050,7 +1150,25 @@ function bind() {
       case "link": T.openLink(b.dataset.url); break;
       case "friends": T.openLink(`https://t.me/${S.config.bot_username}?startgroup=go`); break;
       case "city": T.openLink(new URL("city.html", location.href).href); break;
-      case "vote": api.feedback(a.id, b.dataset.v).catch(() => {}); toast(S.lang === "ru" ? "Спасибо, учту" : S.lang === "kk" ? "Рақмет" : "Thanks"); break;
+      case "vote": {   // "Да, сохранить" also keeps the picked place
+        api.feedback(a.id, b.dataset.v).catch(() => {});
+        const it = a.items[S.sel];
+        if (b.dataset.v === "up" && it) { saveFav({ id: it.place_id || it.event_id || it.title, place_id: it.place_id || null, title: it.title, lat: it.lat, lon: it.lon, category: catOf(it) }); toast(U().saved_ok(it.title)); }
+        else toast(S.lang === "ru" ? "Спасибо, учту" : S.lang === "kk" ? "Рақмет" : "Thanks");
+        break;
+      }
+      case "fav-del": S.favs.splice(i, 1); T.store.set("favs", JSON.stringify(S.favs)); T.haptic.tap(); renderSheet(); break;
+      case "search-more": S.overrides = merge(S.overrides, { budget_min: 60, budget_max: 90 }); ask(); break;
+      case "focus-search": $("#q").focus(); break;
+      case "tab": {   // the tab bar: a section, not a step: no back button
+        const v = b.dataset.tab;
+        S.stack = [];
+        T.backButton(false);
+        if (v === "results" && !S.answer) { S.query = QUICK_QUERIES[0]; $("#q").value = S.t.quick[0]; S.overrides = {}; S.view = "home"; ask(); break; }
+        go(v, false);
+        T.backButton(false);
+        break;
+      }
       default: break;
     }
   });
@@ -1086,21 +1204,25 @@ async function start() {
   try { S.favs = JSON.parse((await T.store.get("favs")) || "[]"); } catch (_) { S.favs = []; }
   S.theme = T.telegramTheme();
   document.documentElement.dataset.theme = S.theme;
-  $("#logo").innerHTML = LOGO;
+  $("#logo").innerHTML = I.search();
   $("#mic").innerHTML = I.mic();
   $("#go").innerHTML = I.send();
+  $("#cam").innerHTML = I.camera();
+  $("#cam").addEventListener("click", () => $("#photo").click());
   T.initTelegram({ onBack: back, theme: S.theme });
   if (T.tg) T.tg.onEvent && T.tg.onEvent("themeChanged", () => applyTheme(T.telegramTheme()));
-  setSheet("half");
+  setSheet("full");
   renderTop();
   renderSheet();
   bind();
   setupVoice();
   fx = new WeatherFx($("#fx"));
   try { S.config = await api.config(); } catch (_) { S.config = { map_style: { dark: "", light: "" }, attribution: ["© OpenStreetMap contributors"] }; }
+  $("#cam").hidden = !S.config.llm;   // "где я? по фото" needs Claude
+  renderSheet();                      // the invite card needs the bot's name from the config
   map = new CityMap($("#map"), {
     styleUrl: S.config.map_style[S.theme] || { version: 8, sources: {}, layers: [] },
-    bg: S.theme === "light" ? "#EEF3F8" : "#0A1424",
+    bg: S.theme === "light" ? "#F3EBDD" : "#1B1612",
     attribution: (S.config.attribution || []).join(" · "),
     onPick: (i) => { S.sel = i; if (S.view !== "results") go("results"); else renderSheet(); map.show(S.answer, i, { fit: false, labels: { you: S.t.you_here } }); T.haptic.tap(); },
     onReject: (i) => { if (S.view !== "whynot") go("whynot"); document.querySelectorAll(".rej").forEach((r, k) => r.classList.toggle("sel", k === i)); },

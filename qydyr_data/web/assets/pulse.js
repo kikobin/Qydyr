@@ -46,7 +46,7 @@ async function start() {
   $("#qr-url").textContent = link.replace(/^https?:\/\//, "");
   map = new maplibregl.Map({ container: "pmap", style: cfg.map_style.dark || { version: 8, sources: {}, layers: [] }, center: ASTANA, zoom: 11.6, attributionControl: false, interactive: false });
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "© OpenStreetMap contributors" }));
-  const fallback = setTimeout(() => { if (!map.isStyleLoaded()) map.setStyle({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#0A1424" } }] }); }, 6000);
+  const fallback = setTimeout(() => { if (!map.isStyleLoaded()) map.setStyle({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#1B1612" } }] }); }, 6000);
   map.on("style.load", () => {
     clearTimeout(fallback);
     if (!map.getSource("cells")) {
