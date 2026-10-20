@@ -486,9 +486,9 @@ function viewWalkDone() {
   const confetti = Array.from({ length: 12 }, (_, i) => `<i class="confetti" style="left:${(i * 29) % 95}%;top:${(i * 37) % 85}%;transform:rotate(${i * 29}deg);background:${["#F2B33D", "#C8412B", "#0A7BA2"][i % 3]}"></i>`).join("");
   return `<div class="done"><div class="done-art">${confetti}${mascot("celebrate", { size: 170, title: MASCOT_NAME[S.lang] })}</div>
     <div class="center"><h1>${esc(w.done_title)}</h1><p class="muted" style="margin-top:6px">${esc(d.title)}</p></div>
-    <div class="stats"><div><div class="stat-v">${d.stops}</div><div class="stat-l">${esc(u.stat.stops)}</div></div>
-      <div><div class="stat-v">${d.facts}</div><div class="stat-l">${esc(u.stat.facts)}</div></div>
-      <div><div class="stat-v">${d.min}</div><div class="stat-l">${esc(u.stat.min)}</div></div></div>
+    <div class="stats"><div><div class="stat-v">${d.stops}</div><div class="stat-l">${esc(u.stat.stops(d.stops))}</div></div>
+      <div><div class="stat-v">${d.facts}</div><div class="stat-l">${esc(u.stat.facts(d.facts))}</div></div>
+      <div><div class="stat-v">${d.min}</div><div class="stat-l">${esc(u.stat.min(d.min))}</div></div></div>
     <p class="muted center">${esc(w.finish_line)}</p>
     <button class="btn primary full" data-act="walk-invite">${I.share("i-s")}${esc(w.invite)}</button>
     <button class="btn secondary full" data-act="walk-again">${esc(w.again)}</button></div>`;
