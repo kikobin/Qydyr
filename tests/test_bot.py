@@ -139,7 +139,7 @@ def test_group_gathering_poll_and_result(harness):
     bot, dp, qb, s = harness
     feed(bot, dp, message=msg("/go мы у Mega Silk Way, есть час", chat=GROUP))
     gathering = s.sent(SendMessage)[-1]
-    assert "Собираю пожелания" in gathering.text and "Я иду · 1" in gathering.reply_markup.inline_keyboard[0][0].text
+    assert "Собираю компанию" in gathering.text and "Я иду · 1" in gathering.reply_markup.inline_keyboard[0][0].text
     g = qb.state.current(GROUP.id)
     bot_msg = Message(message_id=g.message_id, date=datetime.now(), chat=GROUP, from_user=User(id=42, is_bot=True, first_name="Qydyr"))
     feed(bot, dp, message=msg("кофе и тихо", chat=GROUP, user=FRIENDS[0], reply_to_message=bot_msg))
@@ -166,7 +166,7 @@ def test_group_gathering_poll_and_result(harness):
 def test_added_to_group_starts_gathering(harness):
     bot, dp, qb, s = harness
     feed(bot, dp, message=msg("/start go", chat=GROUP))
-    assert "Собираю пожелания" in s.sent(SendMessage)[-1].text and qb.state.current(GROUP.id) is not None
+    assert "Собираю компанию" in s.sent(SendMessage)[-1].text and qb.state.current(GROUP.id) is not None
 
 
 def test_group_html_in_wishes_and_title_is_escaped(harness):
@@ -187,7 +187,13 @@ def test_group_pick_without_place_asks_in_group_terms(harness):
     cq = CallbackQuery(id="11", from_user=USER, chat_instance="y", message=as_message(gathering, GROUP), data=f"g:pick:{g.gid}")
     feed(bot, dp, callback_query=cq)
     last = s.sent(SendMessage)[-1].text
-    assert "Ответьте на сообщение со сбором" in last and "кнопкой ниже" not in last
+    assert "Ответьте на это сообщение геопозицией" in last and "кнопкой ниже" not in last
+    # the reply to that "Где вы?" is where the group is: it picks at once, no second tap
+    pid = next(mid for (chat, mid), gid in qb.state.by_message.items() if gid == g.gid and mid != g.message_id)
+    prompt = Message(message_id=pid, date=datetime.now(), chat=GROUP, from_user=User(id=42, is_bot=True, first_name="Qydyr"))
+    n = len(s.sent(SendMessage))
+    feed(bot, dp, message=msg("мы у Mega Silk Way", chat=GROUP, reply_to_message=prompt))
+    assert any("Mega" in m.text or "<b>1." in m.text for m in s.sent(SendMessage)[n:]), [m.text[:80] for m in s.sent(SendMessage)[n:]]
 
 
 def test_bot_added_to_group_says_hello(harness):

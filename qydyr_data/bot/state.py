@@ -143,6 +143,10 @@ class State:
         g.message_id = message_id
         self.by_message[(g.chat_id, message_id)] = g.gid
 
+    def bind_prompt(self, g: Gathering, message_id: int) -> None:
+        """A "Где вы?" asked after «Подобрать»: a reply to it counts as a reply to the gathering."""
+        self.by_message[(g.chat_id, message_id)] = g.gid
+
     def reset_poll(self, g: Gathering) -> None:
         """A new answer for the gathering: the old poll stops counting, votes start from zero."""
         if g.poll_id:

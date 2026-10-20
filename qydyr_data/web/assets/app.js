@@ -84,7 +84,6 @@ function nowLabel() {
 function renderTop() {
   $("#q").placeholder = S.t.placeholder;
   $("#mic").setAttribute("aria-label", S.t.voice);
-  $("#cam").setAttribute("aria-label", S.t.photo);
   $("#go").setAttribute("aria-label", S.t.send);
   const chips = S.answer ? S.answer.chips : [];
   const parts = [];
@@ -993,24 +992,6 @@ function bindMachine() {
   });
 }
 
-async function photoAsk(file) {
-  S.loading = true;
-  go("results");
-  toast(S.t.photo_wait, 1800);
-  try {
-    const r = await api.whereami(file, S.lang);
-    if (!r.found) { S.loading = false; go("home"); toast(S.t.photo_fail, 3500); return; }
-    toast(S.t.photo_found(r.place), 3500);
-    S.query = "";
-    S.overrides = {};
-    show(r.answer);
-  } catch (e) {
-    S.loading = false;
-    go("home");
-    toast(e.status === 503 ? S.t.photo_off : S.t.net_error, 3500);
-  }
-}
-
 async function locate(explicit = false) {
   let p = await T.getLocation(explicit ? 12000 : 8000);
   if (p && !inAstana(p.lat, p.lon)) { toast(S.t.not_astana, 5200); p = null; explicit = false; }
@@ -1176,7 +1157,6 @@ function bind() {
     if (e.target.matches("[data-act=qa-form]")) { e.preventDefault(); const inp = $("#qa"); askPlace(inp.value); inp.value = ""; }
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !closeMenu()) back(); });
-  document.addEventListener("change", (e) => { if (e.target.id === "photo" && e.target.files[0]) photoAsk(e.target.files[0]); });
 
   // the sheet: drag the handle between low / half / full
   const sheet = $("#sheet"), grab = $("#sheet .grab");
@@ -1207,8 +1187,6 @@ async function start() {
   $("#logo").innerHTML = I.search();
   $("#mic").innerHTML = I.mic();
   $("#go").innerHTML = I.send();
-  $("#cam").innerHTML = I.camera();
-  $("#cam").addEventListener("click", () => $("#photo").click());
   T.initTelegram({ onBack: back, theme: S.theme });
   if (T.tg) T.tg.onEvent && T.tg.onEvent("themeChanged", () => applyTheme(T.telegramTheme()));
   setSheet("full");
@@ -1218,7 +1196,6 @@ async function start() {
   setupVoice();
   fx = new WeatherFx($("#fx"));
   try { S.config = await api.config(); } catch (_) { S.config = { map_style: { dark: "", light: "" }, attribution: ["© OpenStreetMap contributors"] }; }
-  $("#cam").hidden = !S.config.llm;   // "где я? по фото" needs Claude
   renderSheet();                      // the invite card needs the bot's name from the config
   map = new CityMap($("#map"), {
     styleUrl: S.config.map_style[S.theme] || { version: 8, sources: {}, layers: [] },

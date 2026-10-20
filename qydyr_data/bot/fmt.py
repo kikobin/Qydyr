@@ -221,16 +221,15 @@ def answer_keyboard(ans: dict, lang: str = "ru", *, private: bool = True, webapp
     if row:
         rows.append(row)
     chips = []
+    # two edits people make most: the time and "with a kid"; the rest is said in words ("на коляске", "только события")
     for ci, c in enumerate(ans["chips"] if private else []):
-        if c["key"] == "budget" or (c["key"] == "mode" and c["assumed"]):
+        if c["key"] == "budget":
             chips.append(_cb(f"{chip_label(c, ans, lang)} · {t(lang, 'change')}", f"c:{aid}:{ci}"))
-        elif c["key"] in ("kids", "only_events", "wheelchair"):   # a switch: "+ без ступенек" on, "✕ без ступенек" off
+        elif c["key"] == "kids":     # a switch: "+ с ребёнком" on, "✕ с ребёнком" off
             chips.append(_cb(t(lang, "chip_remove" if c["active"] else "chip_add", label=chip_label(c, ans, lang)),
                              f"c:{aid}:{ci}"))
-    for k in range(0, len(chips), 2):
-        rows.append(chips[k:k + 2])
-    if items:
-        rows.append([_cb(t(lang, "good"), f"f:{aid}:up"), _cb(t(lang, "bad"), f"f:{aid}:down")])
+    if chips:
+        rows.append(chips[:2])
     return rows
 
 

@@ -279,6 +279,10 @@ class QydyrBot:
             elif not new:                # a sticker from someone already counted changes nothing
                 return
             await self.refresh_gathering(m.bot, g)
+            # the answer to "Где вы?": a location or "мы у Mega" — pick at once, no second tap on «Подобрать»
+            if (m.reply_to_message.message_id != g.message_id and not g.picking
+                    and (m.location or (m.text and PLACE_HINT.search(m.text)))):
+                await self.pick(m.bot, g)
 
         @r.message(group, F.text)
         async def group_mention(m: Message) -> None:
@@ -824,7 +828,8 @@ class QydyrBot:
                 if ans.get("anchor"):
                     break
             if not ans or not ans.get("anchor"):
-                await bot.send_message(g.chat_id, t(g.lang, "group_need_place"))
+                msg = await bot.send_message(g.chat_id, t(g.lang, "group_need_place"))
+                self.state.bind_prompt(g, msg.message_id)
                 return
             self.state.reset_poll(g)     # a new answer: votes for the old one no longer count
             g.answer = ans

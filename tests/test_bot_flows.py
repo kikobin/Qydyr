@@ -191,7 +191,7 @@ def test_group_language_is_set_in_the_group(env):
     feed(env, message=msg("/lang", chat=GROUP))
     tap(env, "l:kk", shown(env, env.s.sent(SendMessage)[-1], GROUP))
     feed(env, message=msg("/go", chat=GROUP))
-    assert texts(env)[-1].startswith("<b>Тілектерді жинап жатырмын")
+    assert texts(env)[-1].startswith("<b>Компания жинап жатырмын")
     assert env.qb.state.session(USER.id).lang == "ru"      # the person's own language did not change
 
 
@@ -315,10 +315,12 @@ def test_odd_inputs_get_a_hint(env, monkeypatch):
     env.qb.state.session(USER.id).set_location(51.0900, 71.4165)
     feed(env, message=msg("хочу кофе"))
     ans = env.s.sent(SendMessage)[-1]
-    up = next(b for b in buttons(ans) if (b.callback_data or "").endswith(":up"))
+    # the feedback buttons are gone from new answers; a tap on an older answer's button still counts once
+    aid = ans.reply_markup.inline_keyboard[0][0].callback_data.split(":")[1]
+    assert not any((b.callback_data or "").startswith("f:") for b in buttons(ans))
     before = PULSE.votes["up"]
-    tap(env, up.callback_data, shown(env, ans))
-    tap(env, up.callback_data, shown(env, ans))
+    tap(env, f"f:{aid}:up", shown(env, ans))
+    tap(env, f"f:{aid}:up", shown(env, ans))
     assert PULSE.votes["up"] == before + 1
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test")
     monkeypatch.setattr(env.qb.backend, "whereami", lambda img, lang: {

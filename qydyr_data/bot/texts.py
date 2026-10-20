@@ -4,11 +4,10 @@ from __future__ import annotations
 
 T: dict[str, dict[str, str]] = {
     "ru": {
-        "hello": ("<b>Сәлем! Я Qydyr — подскажу, куда пойти рядом в Астане.</b>\n"
-                  "Учитываю время, погоду, часы работы и то, что идёт прямо сейчас.\n\n"
-                  "Пришлите геолокацию или напишите, где вы и сколько у вас времени:\n"
-                  "<i>«я у Хан Шатыра, есть час, хочу кофе и тихо»</i>\n\n"
-                  "В чате друзей: добавьте меня и напишите /go — подберу место, которое устроит всех."),
+        "hello": ("<b>Сәлем! Я Qydyr — подскажу, куда пойти рядом в Астане прямо сейчас.</b>\n\n"
+                  "<b>Где вы?</b> Нажмите «Отправить геолокацию» внизу или напишите место, время и желание:\n"
+                  "<i>«я у Хан Шатыра, есть час, хочу кофе»</i>\n\n"
+                  "Для компании: добавьте меня в чат и напишите /go."),
         "send_location": "Отправить геолокацию",
         "surprise": "Удиви меня",
         "map": "Открыть карту",
@@ -32,10 +31,11 @@ T: dict[str, dict[str, str]] = {
         "photo_found": "Похоже, вы у «{name}» ({conf}). Фото не сохраняю.",
         "photo_off": "Распознавание фото работает с ключом Claude API. Пока напишите, где вы.",
         "voice_off": "Голосовые пока не понимаю — напишите текстом или откройте карту: там есть голосовой ввод.",
-        "group_start": ("<b>Собираю пожелания{where}.</b>\n"
-                        "Ответьте на это сообщение, чего хочется: «кофе и тихо», «что-то необычное», «я с ребёнком».\n"
-                        "Можно ответить геолокацией — найду честную точку встречи.\n"
-                        "Я вижу только команды и ответы мне, остальную переписку не читаю."),
+        "group_start": ("<b>Собираю компанию{where}.</b>\n"
+                        "Ответьте на это сообщение (свайп влево или «Ответить»):\n"
+                        "· где вы — геопозицией (скрепка → Геопозиция) или словами: «мы у Mega»;\n"
+                        "· чего хочется — «кофе», «недорого», «с ребёнком».\n"
+                        "Затем нажмите «Подобрать». Остальную переписку я не читаю."),
         "group_members": "Пожелания:",
         "group_join": "Я иду · {n}",
         "group_pick": "Подобрать",
@@ -49,7 +49,7 @@ T: dict[str, dict[str, str]] = {
         "group_no_gathering": "Сбор не найден. Напишите /go, чтобы начать.",
         "group_noted": "Записал: {name} — {wish}",
         "group_hello": "Привет! Я Qydyr: подскажу, куда пойти рядом. Чтобы выбрать место для компании, напишите /go (можно сразу с пожеланием: /go кофе и тихо).",
-        "group_need_place": "Не знаю, где вы. Ответьте на сообщение со сбором геолокацией или «я у Mega Silk Way».",
+        "group_need_place": "<b>Где вы?</b> Ответьте на это сообщение геопозицией (скрепка → Геопозиция) или местом: «мы у Mega». Подберу сразу.",
         "inline_hint": "Напишите место и желание: «кофе у Mega»",
         "inline_none": "Рядом не нашлось подходящего",
         "help": ("Пишите, как другу: «я у Байтерека, 2 часа до вылета», «тихо поработать с розеткой», "
@@ -159,11 +159,10 @@ T: dict[str, dict[str, str]] = {
         "cmd_go": "Подобрать место для компании",
     },
     "kk": {
-        "hello": ("<b>Сәлем! Мен Qydyr — Астанада жақын жерден қайда бару керегін айтамын.</b>\n"
-                  "Уақытты, ауа райын, жұмыс кестесін және дәл қазір не өтіп жатқанын ескеремін.\n\n"
-                  "Геолокация жіберіңіз немесе қай жердесіз және қанша уақытыңыз бар екенін жазыңыз:\n"
-                  "<i>«Хан Шатыр жанындамын, бір сағатым бар, тыныш жерде кофе ішкім келеді»</i>\n\n"
-                  "Достар чатында: мені қосып, /go деп жазыңыз — бәріне ұнайтын орын таңдаймын."),
+        "hello": ("<b>Сәлем! Мен Qydyr — Астанада дәл қазір жақын жерден қайда бару керегін айтамын.</b>\n\n"
+                  "<b>Қай жердесіз?</b> Төмендегі «Геолокация жіберу» түймесін басыңыз немесе орын, уақыт және тілекті жазыңыз:\n"
+                  "<i>«Хан Шатыр жанындамын, бір сағатым бар, кофе ішкім келеді»</i>\n\n"
+                  "Достармен: мені чатқа қосып, /go деп жазыңыз."),
         "send_location": "Геолокация жіберу",
         "surprise": "Таңқалдыр",
         "map": "Картаны ашу",
@@ -187,10 +186,11 @@ T: dict[str, dict[str, str]] = {
         "photo_found": "Сіз «{name}» жанындасыз сияқты ({conf}). Фотоны сақтамаймын.",
         "photo_off": "Фотоны тану Claude API кілтімен жұмыс істейді. Әзірге қай жерде екеніңізді жазыңыз.",
         "voice_off": "Дауыстық хабарламаны әзірге түсінбеймін — мәтінмен жазыңыз немесе картаны ашыңыз.",
-        "group_start": ("<b>Тілектерді жинап жатырмын{where}.</b>\n"
-                        "Осы хабарламаға жауап беріңіз: «кофе және тыныш», «ерекше бірдеңе», «баламенмін».\n"
-                        "Геолокациямен жауап беруге болады — әділ кездесу орнын табамын.\n"
-                        "Мен тек командалар мен маған берілген жауаптарды көремін."),
+        "group_start": ("<b>Компания жинап жатырмын{where}.</b>\n"
+                        "Осы хабарламаға жауап беріңіз:\n"
+                        "· қай жердесіз — геопозициямен (қыстырғыш → Геопозиция) немесе сөзбен: «біз Mega жанындамыз»;\n"
+                        "· не қалайсыз — «кофе», «арзан», «баламен».\n"
+                        "Содан кейін «Таңдау» түймесін басыңыз. Басқа хат алмасуды оқымаймын."),
         "group_members": "Тілектер:",
         "group_join": "Мен барамын · {n}",
         "group_pick": "Таңдау",
@@ -204,7 +204,7 @@ T: dict[str, dict[str, str]] = {
         "group_no_gathering": "Жинау табылмады. Бастау үшін /go деп жазыңыз.",
         "group_noted": "Жазып алдым: {name} — {wish}",
         "group_hello": "Сәлем! Мен Qydyr: маңайдан қайда бару керегін айтамын. Компанияға орын таңдау үшін /go деп жазыңыз.",
-        "group_need_place": "Қай жерде екеніңізді білмеймін. Жинау хабарламасына геолокациямен немесе «мен Mega Silk Way-demin» деп жауап беріңіз.",
+        "group_need_place": "<b>Қай жердесіз?</b> Осы хабарламаға геопозициямен (қыстырғыш → Геопозиция) немесе орынмен жауап беріңіз: «біз Mega жанындамыз». Бірден таңдаймын.",
         "inline_hint": "Орын мен тілекті жазыңыз: «Mega жанында кофе»",
         "inline_none": "Жақын жерде сәйкес ештеңе табылмады",
         "help": ("Досыңызға жазғандай жазыңыз: «Бәйтерек жанындамын, ұшуға 2 сағат бар». Командалар: /map — карта, "
@@ -311,11 +311,10 @@ T: dict[str, dict[str, str]] = {
         "cmd_go": "Топқа орын таңдау",
     },
     "en": {
-        "hello": ("<b>Hi! I'm Qydyr — I'll tell you where to go nearby in Astana.</b>\n"
-                  "I take into account the time, the weather, opening hours and what is on right now.\n\n"
-                  "Send your location or type where you are and how much time you have:\n"
-                  "<i>“I'm at Khan Shatyr, I have an hour, quiet coffee”</i>\n\n"
-                  "In a friends' chat: add me and type /go — I'll pick a place that suits everyone."),
+        "hello": ("<b>Hi! I'm Qydyr — I'll tell you where to go nearby in Astana right now.</b>\n\n"
+                  "<b>Where are you?</b> Tap “Send location” below or type a place, your time and a wish:\n"
+                  "<i>“I'm at Khan Shatyr, I have an hour, coffee”</i>\n\n"
+                  "For a group: add me to the chat and type /go."),
         "send_location": "Send location",
         "surprise": "Surprise me",
         "map": "Open the map",
@@ -339,10 +338,11 @@ T: dict[str, dict[str, str]] = {
         "photo_found": "Looks like you're at “{name}” ({conf}). The photo is not stored.",
         "photo_off": "Photo recognition needs a Claude API key. For now, type where you are.",
         "voice_off": "I can't understand voice messages yet — type, or open the map: it has voice input.",
-        "group_start": ("<b>Collecting wishes{where}.</b>\n"
-                        "Reply to this message with what you want: “quiet coffee”, “something unusual”, “with a kid”.\n"
-                        "You can reply with your location — I'll find a fair meeting point.\n"
-                        "I only see commands and replies to me, not the rest of the chat."),
+        "group_start": ("<b>Gathering the group{where}.</b>\n"
+                        "Reply to this message:\n"
+                        "· where you are — a location (paperclip → Location) or words: “we're at Mega”;\n"
+                        "· what you want — “coffee”, “cheap”, “with a kid”.\n"
+                        "Then tap “Pick”. I don't read the rest of the chat."),
         "group_members": "Wishes:",
         "group_join": "I'm in · {n}",
         "group_pick": "Pick",
@@ -356,7 +356,7 @@ T: dict[str, dict[str, str]] = {
         "group_no_gathering": "No gathering found. Type /go to start one.",
         "group_noted": "Noted: {name} — {wish}",
         "group_hello": "Hi! I'm Qydyr: I suggest where to go nearby. To pick a place for the group, type /go (add a wish if you like: /go quiet coffee).",
-        "group_need_place": "I don't know where you are. Reply to the gathering message with a location or \"I'm at Mega Silk Way\".",
+        "group_need_place": "<b>Where are you?</b> Reply to this message with a location (paperclip → Location) or a place: “we're at Mega”. I'll pick right away.",
         "inline_hint": "Type a place and a wish: “coffee at Mega”",
         "inline_none": "Nothing nearby fits",
         "help": ("Write like to a friend: “I'm at Baiterek, 2 hours before my flight”. Commands: /map, /surprise, "
