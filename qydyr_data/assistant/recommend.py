@@ -153,9 +153,11 @@ def relevance(c: K.Cand, needs: list[str]) -> float:
 
 class Assistant:
     def __init__(self, data: DataSource, llm: ClaudeIntentParser | None = None,
-                 places: list[PlaceLite] | None = None) -> None:
+                 places: list[PlaceLite] | None = None, narrator=None) -> None:
         self.data = data
         self.llm = llm
+        self.narrator = narrator    # RAG generation: Claude words the picked places' facts (assistant/narrate.py)
+        self.picked: list[Scored] = []  # the last answer's picks with their facts, for a narrator called later
         self.locator = Locator.of(places) if places is not None else Locator(data.places_lite())
 
     # ------------------------------------------------------------------ public
@@ -273,6 +275,9 @@ class Assistant:
         ans.funnel = self._funnel(scored, rejects, len(ans.items))
         ans.context = self._context(radius, speed, end, at, weather)
         self._used_data(ans, anchor, weather, intent)
+        self.picked = picked
+        if self.narrator is not None and ans.items:
+            self.narrator(ans, picked)
         if anchor.source == "gps":  # exact coordinates never leave this function
             anchor.lat, anchor.lon, _ = coarse(anchor.lat, anchor.lon)
             intent.lat, intent.lon = anchor.lat, anchor.lon
@@ -585,6 +590,11 @@ class Assistant:
             elif e["state"] in ("soon", "later_today"):
                 reasons.insert(0, f"в {_hm(e['starts_at'])} там начнётся: {e['title']}")
 
+        # an event on there counts when the person is after an evening out, not when they asked for a park walk
+        # or a quiet coffee: then a concert in a café is a side note, not a reason to send them 20 minutes away
+        if (not any(a.startswith("просто погулять") for a in it.assumptions) and not it.event_kinds
+                and not set(it.needs) & {"event", "unusual", "culture", "night", "nightlife", "romantic", "kids"}):
+            ev_bonus *= 0.3
         if it.persona == "tourist" and c.category in ("landmark", "culture"):
             bonus += 0.08
         if not K.kind_fit(c, it.event_kinds):  # "хочу на выставку": a theatre is culture, but not that
@@ -633,7 +643,9 @@ class Assistant:
             def adj(s: Scored) -> float:
                 same_sub = sum(1 for x in chosen if x.cand.subcategory == s.cand.subcategory)
                 same_cat = sum(1 for x in chosen if x.cand.category == s.cand.category)
-                return s.score - 0.15 * same_sub - 0.04 * same_cat
+                # two "Детская площадка" 30 m apart are one answer, not two
+                twin = any(x.cand.title.casefold() == s.cand.title.casefold() for x in chosen)
+                return s.score - 0.15 * same_sub - 0.04 * same_cat - (1.0 if twin else 0.0)
             best = max(pool, key=adj)
             if adj(best) < floor:
                 break

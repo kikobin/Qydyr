@@ -339,7 +339,7 @@ class ClaudeIntentParser:
         if llm is None:
             from .. import settings
             from ..llm import Claude
-            llm = Claude(settings.CLAUDE_MODEL)
+            llm = Claude(settings.CLAUDE_MODEL, fast=True)
         self.llm = llm
 
     def parse(self, text: str) -> Intent:

@@ -209,11 +209,11 @@ function itemCard(it, i) {
         ${leave ? `<span class="leave">${I.clock("i-s")}${esc(leave)}</span>` : ""}
       </div></div>
     ${full ? `
-      ${it.why.length ? `<p class="why"><b>${esc(t.why)}:</b> ${esc(it.why.join("; "))}</p>` : ""}
+      ${it.pitch ? `<p class="why"><b>${esc(t.why)}:</b> ${esc(it.pitch)}</p>` : it.why.length ? `<p class="why"><b>${esc(t.why)}:</b> ${esc(it.why.join("; "))}</p>` : ""}
       ${it.group_fit && it.group_fit.length ? `<p class="why">${it.group_fit.map(esc).join("<br>")}</p>` : ""}
       <div class="todo"><span class="tag ${it.what_to_do_source === "data" ? "fact" : "idea"}">${esc(it.what_to_do_source === "data" ? t.fact : t.idea)}</span><span>${esc(it.what_to_do)}</span></div>
       ${it.warnings.length ? `<div class="warn">${esc(it.warnings.join("; "))}</div>` : ""}
-      <div class="src">${esc(t.source)}: ${esc(srcs)} · ${esc(confWord(it.confidence))}</div>
+      <div class="src">${esc(t.source)}: ${esc(srcs)} · ${esc(confWord(it.confidence))}${it.pitch ? ` · ${esc(t.by_claude)}` : ""}</div>
       <div class="actions">
         <button class="btn primary" data-act="route" data-i="${i}">${I.route()}${esc(t.route)}</button>
         ${it.place_id ? `<button class="icon-btn" data-act="place" data-i="${i}" aria-label="${esc(t.ask_place)}">${I.ask()}</button>` : ""}

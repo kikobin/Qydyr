@@ -43,6 +43,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 # Haiku 5.5: high-volume extraction and request understanding. Sonnet 5.5: translations, photos.
 CLAUDE_MODEL = os.getenv("QYDYR_CLAUDE_MODEL", "claude-haiku-5-5")
 CLAUDE_MODEL_SMART = os.getenv("QYDYR_CLAUDE_MODEL_SMART", "claude-sonnet-5-5")
+CLAUDE_MODEL_NARRATE = os.getenv("QYDYR_CLAUDE_MODEL_NARRATE", CLAUDE_MODEL_SMART)  # the "why" people read
 
 # Telegram bot + Mini App
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

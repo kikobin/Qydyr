@@ -196,6 +196,10 @@ def need_match(c: Cand, need: str, *, at: datetime | None = None, cold: bool = F
             return "likely", "есть Wi‑Fi — розетки обычно есть, но не гарантированы"
         return ("likely", "") if sub in {"library", "cafe"} else ("unknown", "")
     if need == "quiet":
+        # a concert or a stand-up going on there right now is the opposite of quiet, whatever the place is
+        if any(e.get("state") in ("now", "soon") and event_kind_fits(e, ["concert", "standup", "party", "festival"])
+               for e in c.attached):
+            return "no", ""
         if sub in QUIET_SUBS:
             return ("yes" if sub in {"library", "coworking"} else "likely"), {
                 "museum": "музей", "gallery": "галерея", "garden": "сад", "library": "библиотека",

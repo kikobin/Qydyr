@@ -164,6 +164,20 @@ def _llm_intent():
     return ClaudeIntentParser()
 
 
+_NARRATOR = None
+
+
+def _narrator():
+    """RAG generation: the picked places' facts -> one human "why" each (assistant/narrate.py)."""
+    global _NARRATOR
+    if not settings.ANTHROPIC_API_KEY:
+        return None
+    if _NARRATOR is None:
+        from .assistant.narrate import Narrator
+        _NARRATOR = Narrator()
+    return _NARRATOR
+
+
 class AskIn(BaseModel):
     text: str = Field("", max_length=1000)
     anchor: Anchor | None = None                         # a known place (photo answers, group meeting points)
@@ -237,7 +251,30 @@ def _run(body: AskIn, data: DbData) -> dict:
                      body.surprise)
         log.info("ask cell=%s items=%d", geohash(ans.anchor.lat, ans.anchor.lon, 6), len(ans.items))
     lang = body.lang or ans.intent.lang
+    narrator = _narrator() if body.llm else None
     out: dict[str, Any] = {"lang": "ru", "translated": False}
+    if body.format == "structured" and lang != "ru":
+        # the Mini App and the bot: Claude writes the "why" straight in the person's language while the rest
+        # of the answer (statuses, chips, reasons) is translated next to it, not one after the other
+        dump = ans.model_dump(mode="json")
+        before = [it.what_to_do for it in ans.items]
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            job = pool.submit(translate_answer, dump, lang)
+            if narrator is not None:
+                narrator(ans, assistant.picked, lang=lang)
+            out["translated"] = job.result()
+        for d, it, was in zip(dump["items"], ans.items, before):
+            d["pitch"] = it.pitch
+            if it.what_to_do != was:
+                d["what_to_do"] = it.what_to_do
+        dump["narrated"], dump["used_data"] = ans.narrated, list(ans.used_data)
+        out["answer"] = dump
+        if out["translated"] or ans.narrated:
+            out["lang"] = lang
+        _remember(body, ans, dump)
+        return out
+    if narrator is not None:
+        narrator(ans, assistant.picked)
     dump = ans.model_dump(mode="json")
     if body.format in ("full", "text"):
         t = render(ans)
@@ -250,11 +287,15 @@ def _run(body: AskIn, data: DbData) -> dict:
         out["answer"] = dump
     if lang != "ru" and (out["translated"] or "text" in out and out["text"] != render(ans)):
         out["lang"] = lang
+    _remember(body, ans, dump)
+    return out
+
+
+def _remember(body: AskIn, ans, dump: dict) -> None:
     req = body.model_dump(mode="json")
     if ans.anchor is not None and ans.anchor.source == "gps":  # keep only the coarse cell, never exact GPS
         req["lat"], req["lon"] = ans.anchor.lat, ans.anchor.lon
     ANSWERS.put(ans.id, {"request": req, "answer": dump})
-    return out
 
 
 @app.post("/ask")
@@ -311,7 +352,7 @@ def _llm_text():
     if not settings.ANTHROPIC_API_KEY:
         return None
     from .llm import Claude
-    return Claude(settings.CLAUDE_MODEL)
+    return Claude(settings.CLAUDE_MODEL, fast=True)
 
 
 def _weather_at(lat: float, lon: float, at: datetime, preset_name: str | None = None):
@@ -428,7 +469,7 @@ def place_ask(place_id: str, body: QAIn, data: DbData = Depends(get_data)) -> di
     llm = None
     if settings.ANTHROPIC_API_KEY:
         from .llm import Claude
-        llm = Claude(settings.CLAUDE_MODEL)
+        llm = Claude(settings.CLAUDE_MODEL, fast=True)
     return placeqa.answer(row, evs, body.q, at, llm=llm).model_dump()
 
 
@@ -482,7 +523,7 @@ def place_story(place_id: str, lang: Literal["ru", "kk", "en"] = "ru", at: datet
     llm = None
     if settings.ANTHROPIC_API_KEY:
         from .llm import Claude
-        llm = Claude(settings.CLAUDE_MODEL)
+        llm = Claude(settings.CLAUDE_MODEL, fast=True)
     return tell(row, evs, lang, llm=llm)
 
 

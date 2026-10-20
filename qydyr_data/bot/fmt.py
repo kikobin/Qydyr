@@ -131,7 +131,9 @@ def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False, gps_age: 
             lines.append(f"<b>{e(t(lang, 'leave_now'))}</b>" if lb <= dt(ans["at"]) + timedelta(minutes=1)
                          else f"<b>{e(t(lang, 'leave_by', time=f'{lb:%H:%M}'))}</b>")
         details = []
-        if it.get("why"):
+        if it.get("pitch"):
+            details.append(f"{t(lang, 'why')}: {e(it['pitch'])}")
+        elif it.get("why"):
             details.append(f"{t(lang, 'why')}: {e('; '.join(it['why']))}")
         if it.get("group_fit"):
             details.append(f"{t(lang, 'everyone')}: " + e(" · ".join(it["group_fit"])))
@@ -142,7 +144,8 @@ def answer_html(ans: dict, lang: str = "ru", *, compact: bool = False, gps_age: 
         if it.get("warnings"):
             details.append(f"{t(lang, 'warning')}: {e('; '.join(it['warnings']))}")
         hosts = ", ".join(dict.fromkeys(host(s) for s in it.get("sources", []))) or "OpenStreetMap"
-        details.append(e(t(lang, "source", src=hosts, conf=conf(it["confidence"], lang))))
+        details.append(e(t(lang, "source", src=hosts, conf=conf(it["confidence"], lang))
+                         + (f" · {t(lang, 'by_claude')}" if it.get("pitch") else "")))
         if compact and i > 1:
             continue
         lines.append("<blockquote expandable>" + "\n".join(details) + "</blockquote>")
@@ -171,8 +174,8 @@ def item_html(ans: dict, i: int, lang: str = "ru") -> str:
     e = escape
     it = ans["items"][i]
     lines = [f"<b>{e(it['title'])}</b> — {e(walk_text(it, lang))}", e(it["status"])]
-    if it.get("why"):
-        lines.append(f"{t(lang, 'why')}: {e('; '.join(it['why'][:2]))}")
+    if it.get("pitch") or it.get("why"):
+        lines.append(f"{t(lang, 'why')}: {e(it.get('pitch') or '; '.join(it['why'][:2]))}")
     src = t(lang, f"src_{it['what_to_do_source']}")
     lines.append(f"{e(t(lang, 'what_to_do', src=src))}: {e(it['what_to_do'])}")
     where = ans["anchor"]["label"] if ans.get("anchor") and ans["anchor"]["source"] != "gps" else ""

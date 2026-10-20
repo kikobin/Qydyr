@@ -23,7 +23,7 @@ T = TypeVar("T", bound=BaseModel)
 
 class Claude:
     def __init__(self, model: str | None = None, *, api_key: str | None = None, client=None,
-                 cache_dir: Path | None = None) -> None:
+                 cache_dir: Path | None = None, fast: bool = False) -> None:
         if client is None:
             from anthropic import Anthropic
 
@@ -34,6 +34,19 @@ class Claude:
         self.client = client
         self.model = model or settings.CLAUDE_MODEL
         self.cache_dir = cache_dir
+        self.fast = fast
+
+    def _thinking(self) -> dict:
+        """Short, latency-bound calls (a request to parse, three sentences to write, strings to translate)
+        don't need thinking, and with it the person waits twice as long. Haiku 5.5 turns it off with
+        "disabled"; Sonnet 5.5 rejects that and takes "between_tools"; other models keep their default."""
+        if not self.fast:
+            return {}
+        if self.model.startswith("claude-haiku-5"):
+            return {"thinking": {"type": "disabled"}}
+        if self.model.startswith("claude-sonnet-5-5"):
+            return {"thinking": {"type": "between_tools"}}
+        return {}
 
     def _cache_path(self, *parts: str) -> Path | None:
         if self.cache_dir is None:
@@ -52,6 +65,7 @@ class Claude:
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user}],
             output_format=schema,
+            **self._thinking(),
         )
         out = resp.parsed_output
         if out is None:
@@ -64,6 +78,6 @@ class Claude:
     def text(self, *, system: str, user: str | list, max_tokens: int = 4096) -> str:
         resp = self.client.messages.create(
             model=self.model, max_tokens=max_tokens, system=system,
-            messages=[{"role": "user", "content": user}],
+            messages=[{"role": "user", "content": user}], **self._thinking(),
         )
         return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()

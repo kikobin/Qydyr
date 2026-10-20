@@ -51,7 +51,9 @@ def render(ans: Answer) -> str:
         if it.leave_by:
             lines.append("   Выходите сейчас, чтобы успеть" if it.leave_by <= ans.at + timedelta(minutes=1)
                          else f"   Выходите до {_hm(it.leave_by)}, чтобы успеть")
-        if it.why:
+        if it.pitch:
+            lines.append("   Почему: " + it.pitch)
+        elif it.why:
             lines.append("   Почему: " + "; ".join(it.why))
         if it.group_fit:
             lines.append("   Каждому: " + " · ".join(it.group_fit))
@@ -62,7 +64,8 @@ def render(ans: Answer) -> str:
         if it.warnings:
             lines.append("   Внимание: " + "; ".join(it.warnings))
         src = ", ".join(dict.fromkeys(source_name(u) for u in it.sources)) or "база"
-        lines.append(f"   Источник: {src} · уверенность: {confidence_word(it.confidence)}")
+        lines.append(f"   Источник: {src} · уверенность: {confidence_word(it.confidence)}"
+                     + (" · текст: Claude по этим данным" if it.pitch else ""))
 
     if ans.route:
         r = ans.route

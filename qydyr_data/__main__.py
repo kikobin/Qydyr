@@ -145,12 +145,13 @@ def cmd_ask(args) -> None:
     from .assistant.recommend import Assistant, DbData
     from .assistant.render import render, render_why_not
 
-    llm = None
+    llm = narrator = None
     if args.llm:
         from .assistant.intent import ClaudeIntentParser
-        llm = ClaudeIntentParser()
+        from .assistant.narrate import Narrator
+        llm, narrator = ClaudeIntentParser(), Narrator()
     with store.connect() as conn:
-        a = Assistant(DbData(conn), llm=llm)
+        a = Assistant(DbData(conn), llm=llm, narrator=narrator)
         ans = a.ask(args.text, at=_at(args.at), lat=args.lat, lon=args.lon,
                     weather_file=Path(args.weather_file) if args.weather_file else None,
                     air_file=Path(args.air_file) if args.air_file else None,
@@ -291,7 +292,7 @@ def main(argv: list[str] | None = None) -> None:
     sa.add_argument("--surprise", action="store_true", help="'Удиви меня': one unexpected pick")
     sa.add_argument("--why-not", action="store_true", help="also print why other places were dropped")
     sa.add_argument("--member", action="append", help='group mode: "Айгерим: кофе и тихо" (repeatable)')
-    sa.add_argument("--llm", action="store_true", help="also use Claude to understand the request")
+    sa.add_argument("--llm", action="store_true", help="also use Claude: understand the request, word the answer")
     sa.add_argument("--json", action="store_true")
     sa.set_defaults(fn=cmd_ask)
 

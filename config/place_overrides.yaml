@@ -2,11 +2,14 @@
 # Aliases are what people actually say ("я у Чупа-чупса") and what afishas write.
 # Keep aliases specific: a short generic alias like "Мега" would grab unrelated places.
 # attrs feed the assistant's knowledge (view, interactive, ...), shown as data, not as guesses.
+# opening_hours (OSM syntax) fills hours OpenStreetMap doesn't have, only with hours_source: the page they are from.
 
 Байтерек:
   aliases: [Чупа-чупс, Чупа чупс, Baiterek, Bayterek, Бәйтерек, монумент Байтерек]
   indoor: mixed          # observation deck inside, square outside
   attrs: {view: "yes"}
+  opening_hours: "Mo-Su 09:00-13:00,13:30-18:00,18:30-21:00"     # observation deck, with its two breaks
+  hours_source: https://sxodim.com/astana/place/monument-bayterek-otkrylsya-dlya-posetiteley
 
 Дворец мира и согласия:
   aliases: [Пирамида, Pyramid of Peace, Palace of Peace and Reconciliation, Бейбітшілік және келісім сарайы,
@@ -21,6 +24,8 @@
   aliases: [Национальный музей РК, Национальный музей, Нацмузей, Нацмузей РК,
             National Museum of the Republic of Kazakhstan, Қазақстан Республикасының Ұлттық музейі, Ұлттық музей]
   indoor: indoor
+  opening_hours: "Tu-Su 10:00-18:00; Mo off"     # also closed on the last Tuesday of the month (sanitary day)
+  hours_source: https://nmrk.kz/about-museum/contacts/
 
 Astana Opera:
   aliases: [Астана Опера, ГТОБ Астана Опера, Государственный театр оперы и балета Астана Опера]
@@ -31,6 +36,8 @@ Astana Opera:
             EXPO, Экспо, ЭКСПО, Экспо 2017, EXPO 2017, здание Экспо, шар Экспо]
   indoor: indoor
   attrs: {interactive: "yes"}
+  opening_hours: "Tu-Su 10:00-18:30; Mo off"     # the museum inside the sphere
+  hours_source: https://alem.ai
 
 Mega Silk Way:
   aliases: [Мега Силк Уэй, Мега Силк Вей, MEGA Silk Way, ТРЦ Mega Silk Way, Мега Силквей]

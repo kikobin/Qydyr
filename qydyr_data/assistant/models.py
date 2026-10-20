@@ -119,6 +119,7 @@ class Item(BaseModel):
     status: str                                  # "открыто до 22:00" / "Идёт сейчас · вечерняя выставка"
     labels: list[str] = Field(default_factory=list)  # machine labels for the UI: now, soon, evening, free...
     why: list[str] = Field(default_factory=list)
+    pitch: Optional[str] = None                  # the "why" in one human sentence, written by Claude from these facts
     group_fit: list[str] = Field(default_factory=list)  # group mode: how it fits each person (text)
     group_detail: list[MemberFit] = Field(default_factory=list)
     what_to_do: str = ""
@@ -235,3 +236,4 @@ class Answer(BaseModel):
     funnel: list[FunnelStep] = Field(default_factory=list)
     context: Context = Field(default_factory=Context)
     surprise: bool = False
+    narrated: bool = False                      # some text was written by Claude from the retrieved facts

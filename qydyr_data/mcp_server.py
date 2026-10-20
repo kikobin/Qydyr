@@ -68,9 +68,13 @@ def _demo_kw() -> dict:
                          "coffee with a socket'. Returns 1–3 picks with why, how long, what to do, and sources.")
 def ask_astana(request: str, lat: float | None = None, lon: float | None = None, at: str | None = None) -> dict:
     with store.connect() as conn:
-        ans = Assistant(DbData(conn)).ask(request[:1000], lat=lat, lon=lon, at=_at(at), **_demo_kw())
+        narrator = None
+        if settings.ANTHROPIC_API_KEY:
+            from .assistant.narrate import Narrator
+            narrator = Narrator()
+        ans = Assistant(DbData(conn), narrator=narrator).ask(request[:1000], lat=lat, lon=lon, at=_at(at), **_demo_kw())
     items = [{"title": i.title, "status": i.status, "walk_min": i.walk_min, "distance_m": i.distance_m,
-              "visit_min": list(i.visit_min), "why": i.why, "what_to_do": i.what_to_do,
+              "visit_min": list(i.visit_min), "why": i.why, "why_text": i.pitch, "what_to_do": i.what_to_do,
               "what_to_do_source": "listing" if i.what_to_do_source == "data" else "assistant idea",
               "warnings": i.warnings, "sources": i.sources, "lat": i.lat, "lon": i.lon, "confidence": i.confidence}
              for i in ans.items]

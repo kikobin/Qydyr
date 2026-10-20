@@ -1,11 +1,11 @@
-"""Apply config/place_overrides.yaml (aliases, indoor flag, extra attrs) to normalized places."""
+"""Apply config/place_overrides.yaml (aliases, indoor flag, extra attrs, sourced opening hours) to normalized places."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import yaml
 
-from .. import settings
+from .. import hours, settings
 from ..textnorm import name_keys
 from .normalize import Place
 
@@ -33,9 +33,17 @@ def apply(places: list[Place], overrides: dict) -> int:
         for name, rule, keys in rules:
             if pkeys & keys:
                 p.aliases = sorted({*p.aliases, name, *rule.get("aliases", [])} - {p.name})
+                if p.category == "anchor":   # the LRT stop "Бәйтерек" shares the name, not the hours or the view
+                    touched += 1
+                    break
                 if rule.get("indoor"):
                     p.indoor = rule["indoor"]
                 p.attrs.update(rule.get("attrs", {}))
+                # hours OSM lacks, from the venue's own page; OSM's own hours win when it has them
+                oh = rule.get("opening_hours")
+                if oh and rule.get("hours_source") and not p.hours_valid and hours.is_valid(oh):
+                    p.opening_hours, p.hours_valid = oh, True
+                    p.attrs["opening_hours:source"] = rule["hours_source"]
                 touched += 1
                 break
     return touched
